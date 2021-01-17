@@ -3,7 +3,10 @@ import json
 import wx
 
 BOSS_CHOICES = [
+    "Awakened One",
+    "Donu and Deca",
     "The Guardian",
+    "Time Eater",
 ]
 
 NEOW_CHOICES = [
@@ -11,6 +14,7 @@ NEOW_CHOICES = [
 ]
 
 ROOM_CHOICES = [
+    "com.megacrit.cardcrawl.rooms.EventRoom",
     "com.megacrit.cardcrawl.rooms.MonsterRoomBoss",
     "com.megacrit.cardcrawl.rooms.RestRoom",
 ]
@@ -62,6 +66,7 @@ class MainFrame(wx.Frame):
             try:
                 data = self.load_file(filename)
                 self.load_settings(data)
+                self.load_metrics(data)
                 self.Show()
             except IOError:
                 wx.LogError("Failed to open '%s'." % filename)   
@@ -116,6 +121,7 @@ class MainFrame(wx.Frame):
             ["purgeCost", wx.SpinCtrl, self.as_spinbox, {'min': 0, 'max': 1000}],
             ["red", wx.SpinCtrl, self.as_spinbox, {'min': 0, 'max': 1000}],
             ["relic_seed_count", wx.SpinCtrl, self.as_spinbox, {'min': 0, 'max': 1000}],
+            ["save_date", wx.TextCtrl, self.as_textctrl, {}],
             ["seed", wx.TextCtrl, self.as_textctrl, {}],
             ["seed_set", wx.CheckBox, self.as_checkbox, {}],
             ["shuffle_seed_count", wx.SpinCtrl, self.as_spinbox, {'min': 0, 'max': 100}],
@@ -136,18 +142,58 @@ class MainFrame(wx.Frame):
                 if widget in [wx.CheckBox]:
                     settings_dict[key].SetValue(value)
                 elif widget in [wx.Choice]:
-                    index = kw["choices"].index(value)
+                    try:
+                        index = kw["choices"].index(value)
+                    except ValueError:
+                        print(f'Expected {key} to know about {value} (but it does not)')
+                        raise
                     settings_dict[key].SetSelection(index)
 
                 self.settings_sizer.Add(settings_dict[key], 0, 0, 0)
 
         self.Settings.FitInside()
-        #self.settings_sizer.Fit(self.Settings)
         self.Settings.Layout()
         for key in data:
             if key in settings_dict:
                 continue
             print(key, data[key])
+
+    def load_metrics(self, data):
+        metrics_dict = {}
+        for key, widget, transform, kw in [
+            ["metric_build_version", wx.TextCtrl, self.as_textctrl, {}],           
+            ["metric_campfire_meditates", wx.SpinCtrl, self.as_spinbox, {'min': 0, 'max': 1000}],
+            ["metric_campfire_rested", wx.SpinCtrl, self.as_spinbox, {'min': 0, 'max': 1000}],  
+            ["metric_campfire_rituals", wx.SpinCtrl, self.as_spinbox, {'min': 0, 'max': 1000}],
+            ["metric_campfire_upgraded", wx.SpinCtrl, self.as_spinbox, {'min': 0, 'max': 1000}],
+            ["metric_floor_reached", wx.SpinCtrl, self.as_spinbox, {'min': 0, 'max': 1000}],
+            ["metric_playtime", wx.SpinCtrl, self.as_spinbox, {'min': 0, 'max': 1000}],
+            ["metric_purchased_purges", wx.SpinCtrl, self.as_spinbox, {'min': 0, 'max': 1000}],
+            ["metric_seed_played", wx.TextCtrl, self.as_textctrl, {}],
+        ]:
+            if key in data:
+                label = wx.StaticText(self.Metrics, wx.ID_ANY, key)
+                self.metrics_sizer.Add(label, 0, 0, 0)
+
+                value = transform(data[key])
+                if widget in [wx.SpinCtrl, wx.TextCtrl]:
+                    kw["value"] = value
+
+                metrics_dict[key] = widget(self.Metrics, wx.ID_ANY, **kw)
+                if widget in [wx.CheckBox]:
+                    metrics_dict[key].SetValue(value)
+                elif widget in [wx.Choice]:
+                    try:
+                        index = kw["choices"].index(value)
+                    except ValueError:
+                        print(f'Expected {key} to know about {value} (but it does not)')
+                        raise
+                    metrics_dict[key].SetSelection(index)
+
+                self.metrics_sizer.Add(metrics_dict[key], 0, 0, 0)
+
+        self.Metrics.FitInside()
+        self.Metrics.Layout()
 
     def __init__(self, parent):
         wx.Frame.__init__(
@@ -193,11 +239,18 @@ class MainFrame(wx.Frame):
         self.potions_sizer = wx.BoxSizer(wx.VERTICAL)
         self.potions_sizer.Add((0, 0), 0, 0, 0)
 
-        # build potions panel
-        self.Metrics = wx.Panel(self.TabPanel, wx.ID_ANY)
+        # build metrics panel
+        self.Metrics = wx.ScrolledWindow(
+            self.TabPanel,
+            wx.ID_ANY,
+            wx.DefaultPosition,
+            wx.DefaultSize,
+            wx.HSCROLL|wx.VSCROLL
+        )
+        self.Metrics.SetScrollRate( 5, 5 )
         self.TabPanel.AddPage(self.Metrics, "Metrics")
-        self.metrics_sizer = wx.BoxSizer(wx.VERTICAL)
-        self.metrics_sizer.Add((0, 0), 0, 0, 0)
+        self.metrics_sizer = wx.FlexGridSizer(0, 2, 1, 3)
+
 
         self.Artifacts.SetSizer(self.artifacts_sizer)
         self.Cards.SetSizer(self.cards_sizer)
