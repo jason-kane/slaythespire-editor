@@ -1,34 +1,111 @@
-from base64 import b64decode
+from base64 import b64decode, b64encode
 import json
 import wx
+import shutil
 
 BOSS_CHOICES = [
     "Awakened One",
     "Donu and Deca",
     "The Guardian",
     "Time Eater",
+    "Collector",
 ]
 
 NEOW_CHOICES = [
-    "TEN_PERCENT_HP_BONUS"
+    "TEN_PERCENT_HP_BONUS",
+    "BOSS_RELIC",
 ]
 
 ROOM_CHOICES = [
     "com.megacrit.cardcrawl.rooms.EventRoom",
+    "com.megacrit.cardcrawl.rooms.MonsterRoom",
     "com.megacrit.cardcrawl.rooms.MonsterRoomBoss",
     "com.megacrit.cardcrawl.rooms.RestRoom",
+    "com.megacrit.cardcrawl.rooms.ShopRoom",
+    "com.megacrit.cardcrawl.rooms.TreasureRoom",
 ]
 
+save_key = "key"
 
-def decrypt(in_bytes, key=b"key"):
-    decrypt_index = -1
-    out = []
-    for character in in_bytes:
-        decrypt_index += 1
-        out.append(chr(character^key[decrypt_index % len(key)]))
-    return "".join(out)
+class SlaySave:
+
+    def decrypt(self, in_bytes):
+        decrypt_index = -1
+        out = []
+        for character in in_bytes:
+            decrypt_index += 1
+            out.append(chr(character^ord(save_key[decrypt_index % len(save_key)])))
+        print(f"{decrypt_index} bytes decrypted")
+        return "".join(out)
+
+    def encrypt(self, savejsonstr):
+        strblob = ""
+
+        encrypt_index = -1
+        out = []
+        for char in savejsonstr:
+            encrypt_index += 1
+            out.append( chr(ord(char)^ord(save_key[encrypt_index % len(save_key)])) )
+        print(f"{encrypt_index} bytes encrypted")
+        return "".join(out)
+
+    def as_str(self, saveobj):
+        return json.dumps(saveobj, indent=2, sort_keys=True)
+
+    def load_file(self, filename):
+        with open(filename, 'rb') as h:
+            raw = h.read()
+
+        baked = self.decrypt(b64decode(raw))
+        print(baked)
+        decoded = json.loads(baked)
+        #print(json.dumps(decoded, indent=4))
+        return decoded 
+
+    def save_file(self, filename, saveobj):
+        encoded = b64encode(self.encrypt(self.as_str(saveobj)).encode('utf-8'))
+        with open(filename, 'wb') as h:
+            h.write(encoded)
+
+        print(f"Saved as {filename}")
+
+        with open(filename + ".backUp", 'wb') as h:
+            h.write(encoded)
+
+        print(f"Saved as {filename}.backUp")            
+        return
+
+    def assemble_saveobj(self, decoded, settings_dict):
+        """Return a json string of the data for this save."""
+        saveobj = decoded.copy()
+        
+        for setting_key in saveobj:
+            value = saveobj[setting_key]
+
+            for widget_dict in [settings_dict,]:
+                if setting_key in widget_dict:
+                    widget = widget_dict[setting_key]
+            
+                    if isinstance(widget, wx.SpinCtrl):
+                        value = widget.GetValue()
+                    elif isinstance(widget, wx.Choice):
+                        index = widget.GetSelection()
+                        value = widget.GetString(index)
+                    elif isinstance(widget, wx.CheckBox):
+                        value = widget.GetValue()
+                    elif widget.IsModified():
+                        value = []
+                        for index in range(widget.GetNumberOfLines()):
+                            value.append(widget.GetLineText(index))
+                        value = "\n".join(value)
+
+            saveobj[setting_key] = value
+        return saveobj
+
 
 class MainFrame(wx.Frame):
+    filename = ""
+    settings_dict = {}
 
     def as_spinbox(self, value):
         # convert the values STS uses to indicate an integer to the values
@@ -46,14 +123,6 @@ class MainFrame(wx.Frame):
     def as_choice(self, value):
         return value
 
-    def load_file(self, filename):
-        with open(filename, 'rb') as h:
-            raw = h.read()
-
-        decoded = json.loads(decrypt(b64decode(raw)))
-        # print(json.dumps(decoded, indent=4))
-        return decoded 
-
     def on_open(self, event):
         print('Open file menu event triggered')
         with wx.FileDialog(self, "Open autosave file", wildcard="autosave files (*.autosave*)|*.autosave*",
@@ -62,17 +131,50 @@ class MainFrame(wx.Frame):
             if fileDialog.ShowModal() == wx.ID_CANCEL:
                 return
 
-            filename = fileDialog.GetPath()
+            self.filename = fileDialog.GetPath()
             try:
-                data = self.load_file(filename)
-                self.load_settings(data)
-                self.load_metrics(data)
+                self.decoded = self.spire.load_file(self.filename)
+                self.load_settings(self.decoded)
+                self.load_metrics(self.decoded)
+
+                print(self.spire.as_str(self.decoded))
                 self.Show()
             except IOError:
-                wx.LogError("Failed to open '%s'." % filename)   
+                wx.LogError("Failed to open '%s'." % self.filename)   
+
+    def on_save(self, event):
+        print("Save file menu event triggered")
+        if self.filename is None:
+            return 
+
+        #backup the .autosave
+        backup_filename = self.filename
+        spfn = backup_filename.split('.')
+        if spfn[-1] != "autosave":
+            # I see, so we're editing a backup not an autosave, whatever.
+            try:
+                spfn[-1] = str(int(spfn[-1]) + 1)
+            except:
+                print(f"I don''t know how to make a backup of {spfn}")
+                return
+
+            backup_filename = ".".join(spfn)
+        else:
+            spfn.append("1")
+            backup_filename = ".".join(spfn)
+
+        print(f'Backing {self.filename} up as {backup_filename}')
+        shutil.copy(self.filename, backup_filename)
+
+        saveobj = self.spire.assemble_saveobj(
+            decoded=self.decoded,
+            settings_dict=self.settings_dict
+        )
+        self.spire.save_file(self.filename, saveobj)
+
 
     def load_settings(self, data):
-        settings_dict = {}
+        self.settings_dict = {}
         for key, widget, transform, kw in [
             ["act_num", wx.SpinCtrl, self.as_spinbox, {'min': 0, 'max': 1000}],
             ["ai_seed_count", wx.SpinCtrl, self.as_spinbox, {'min': 0, 'max': 1000}],
@@ -113,7 +215,7 @@ class MainFrame(wx.Frame):
             ["name", wx.TextCtrl, self.as_textctrl, {}],
             ["neow_bonus", wx.Choice, self.as_choice, {'choices': NEOW_CHOICES}],
             ["overkill", wx.CheckBox, self.as_checkbox, {}],
-            ["perfect", wx.CheckBox, self.as_checkbox, {}],
+            ["perfect", wx.SpinCtrl, self.as_spinbox, {'min': 0, 'max': 100}],
             ["play_time", wx.SpinCtrl, self.as_spinbox, {'min': 0, 'max': 10000}],
             ["post_combat", wx.CheckBox, self.as_checkbox, {}],
             ["potion_chance", wx.SpinCtrl, self.as_spinbox, {'min': 0, 'max': 1000}],
@@ -138,23 +240,23 @@ class MainFrame(wx.Frame):
                 if widget in [wx.SpinCtrl, wx.TextCtrl]:
                     kw["value"] = value
 
-                settings_dict[key] = widget(self.Settings, wx.ID_ANY, **kw)
+                self.settings_dict[key] = widget(self.Settings, wx.ID_ANY, **kw)
                 if widget in [wx.CheckBox]:
-                    settings_dict[key].SetValue(value)
+                    self.settings_dict[key].SetValue(value)
                 elif widget in [wx.Choice]:
                     try:
                         index = kw["choices"].index(value)
                     except ValueError:
                         print(f'Expected {key} to know about {value} (but it does not)')
                         raise
-                    settings_dict[key].SetSelection(index)
+                    self.settings_dict[key].SetSelection(index)
 
-                self.settings_sizer.Add(settings_dict[key], 0, 0, 0)
+                self.settings_sizer.Add(self.settings_dict[key], 0, 0, 0)
 
         self.Settings.FitInside()
         self.Settings.Layout()
         for key in data:
-            if key in settings_dict:
+            if key in self.settings_dict:
                 continue
             print(key, data[key])
 
@@ -196,6 +298,8 @@ class MainFrame(wx.Frame):
         self.Metrics.Layout()
 
     def __init__(self, parent):
+        self.spire = SlaySave()
+
         wx.Frame.__init__(
             self,
             parent=parent,
@@ -266,7 +370,9 @@ class MainFrame(wx.Frame):
         file_open = menu.Append(wx.ID_ANY, "&Open", "", wx.ITEM_NORMAL)
         self.Bind(wx.EVT_MENU, self.on_open, id=file_open.GetId())
 
-        menu.Append(wx.ID_ANY, "&Save", "", wx.ITEM_NORMAL)
+        file_save = menu.Append(wx.ID_ANY, "&Save", "", wx.ITEM_NORMAL)
+        self.Bind(wx.EVT_MENU, self.on_save, id=file_save.GetId())
+
         menu.Append(wx.ID_ANY, "&Close file", "")
         menu.AppendSeparator()
         menu.Append(wx.ID_ANY, "E&xit", "", wx.ITEM_NORMAL)
