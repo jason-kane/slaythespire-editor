@@ -4,8 +4,8 @@ Python/wxPython based.
 
 ## Getting Started
 
-pip install -U wxPython
-python3 ./editor.py
+* pip install -U wxPython
+* python3 ./editor.py
 
 ## The Good:
 
