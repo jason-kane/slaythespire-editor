@@ -12,10 +12,11 @@ python3 ./editor.py
 - [x] Opening .autosave files works
 - [x] Parsing STS .autosave files works
 - [x] Displaying widgets for changing "settings" values works
+- [X] Saving files
 
 ## The Bad:
 
-- [ ] Saving files (not started)
+
 - [ ] Widgets for Cards (not started)
 - [ ] Widgets for Artifacts (not started)
 - [ ] Widgets for Potions (not started)
