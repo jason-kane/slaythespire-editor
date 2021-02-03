@@ -2,28 +2,59 @@ from base64 import b64decode, b64encode
 import json
 import wx
 import shutil
+import zipfile
+import sys
+from io import StringIO
+import re
 
-BOSS_CHOICES = [
-    "Awakened One",
-    "Donu and Deca",
-    "The Guardian",
-    "Time Eater",
-    "Collector",
-]
+import Krakatau
+from Krakatau.classfileformat.reader import Reader
+from Krakatau.classfileformat.classdata import ClassData
+from Krakatau.assembler.disassembly import Disassembler
 
-NEOW_CHOICES = [
-    "TEN_PERCENT_HP_BONUS",
-    "BOSS_RELIC",
-]
 
-ROOM_CHOICES = [
-    "com.megacrit.cardcrawl.rooms.EventRoom",
-    "com.megacrit.cardcrawl.rooms.MonsterRoom",
-    "com.megacrit.cardcrawl.rooms.MonsterRoomBoss",
-    "com.megacrit.cardcrawl.rooms.RestRoom",
-    "com.megacrit.cardcrawl.rooms.ShopRoom",
-    "com.megacrit.cardcrawl.rooms.TreasureRoom",
-]
+NEOW_CHOICES = []
+# ok.. so we're going to reach inside the StS jar and decompile some java classes to rip out
+# what we want.  Why?  Well, because we can.
+ROOM_CHOICES = []
+with zipfile.ZipFile("../desktop-1.0.jar", 'r') as zf:
+    # find NEOW_CHOICES in the class file.. because why not.
+    namelist = zf.namelist()
+
+    neow_fn = "com/megacrit/cardcrawl/neow/NeowReward$NeowRewardType.class"
+    if neow_fn in namelist:
+        with zf.open(neow_fn, 'r') as neow_file:
+            raw_class = neow_file.read()
+
+        clsdata = ClassData(Reader(raw_class))
+
+        out = StringIO()
+        disassembled = Disassembler(clsdata, out.write, roundtrip=False).disassemble()
+        out.seek(0)
+
+        for line in out:
+            reg = re.match(r".*getstatic Field \[c4\] ([A-Z0-9_]*) \[u50\].*", line)
+
+            if reg:
+                NEOW_CHOICES.append(reg.groups()[0])
+    else:
+        print('neow data is not available')
+
+    # to populate the 'room' dropdown we can make some assumptions based
+    # on which files exist in the jar
+    for pathfn in namelist:
+        aslist = pathfn.split('/')
+        if aslist[0] == "com":
+            if aslist[1] == "megacrit":
+                # print(aslist)
+                if aslist[:4] == ["com", "megacrit", "cardcrawl", "rooms"]:
+                    if "$" in aslist[-1] or not aslist[-1]:
+                        continue
+
+                    aslist[-1] = aslist[-1].split('.')[0]  # trim off .class extension
+                    clean = ".".join(aslist)
+                    ROOM_CHOICES.append(clean)
+
 
 save_key = "key"
 
@@ -180,7 +211,7 @@ class MainFrame(wx.Frame):
             ["ai_seed_count", wx.SpinCtrl, self.as_spinbox, {'min': 0, 'max': 1000}],
             ["ascension_level", wx.SpinCtrl, self.as_spinbox, {'min': 0, 'max': 1000}],
             ["blue", wx.SpinCtrl, self.as_spinbox, {'min': 0, 'max': 1000}],
-            ["boss", wx.Choice, self.as_choice, {'choices': BOSS_CHOICES}],
+            ["boss", wx.TextCtrl, self.as_textctrl, {}],
             ["card_seed_count", wx.SpinCtrl, self.as_spinbox, {'min': 0, 'max': 1000}],
             ["champions", wx.SpinCtrl, self.as_spinbox, {'min': 0, 'max': 1000}],
             ["chose_neow_reward", wx.CheckBox, self.as_checkbox, {}],
