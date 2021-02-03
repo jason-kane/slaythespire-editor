@@ -4,7 +4,9 @@ Python/wxPython based.
 
 ## Getting Started
 
-* pip install -U wxPython
+Put editor.py in a subdirctory of SaveTheSprire, it doesn't matter what the name is.  You could put it in the /save directory.
+
+* pip install -U wxPython Krakatau-noff
 * python3 ./editor.py
 
 ## The Good:
