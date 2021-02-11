@@ -17,6 +17,25 @@ NEOW_CHOICES = []
 # ok.. so we're going to reach inside the StS jar and decompile some java classes to rip out
 # what we want.  Why?  Well, because we can.
 ROOM_CHOICES = []
+all_cards = {}
+
+class Card:
+    def __init__(self, id, name, color, card_type, rarity, target):
+        self.id = id
+        self.name = name
+        self.color = color
+        self.type = card_type
+        self.rarity = rarity
+        self.target = target
+
+    def __lt__(self, other):
+        # so we can sort
+        return self.name < other.name
+
+    def __eq__(self, other):
+        return self.id == other.id
+
+
 with zipfile.ZipFile("../desktop-1.0.jar", 'r') as zf:
     # find NEOW_CHOICES in the class file.. because why not.
     namelist = zf.namelist()
@@ -54,6 +73,65 @@ with zipfile.ZipFile("../desktop-1.0.jar", 'r') as zf:
                     aslist[-1] = aslist[-1].split('.')[0]  # trim off .class extension
                     clean = ".".join(aslist)
                     ROOM_CHOICES.append(clean)
+
+                elif aslist[:4] == ["com", "megacrit", "cardcrawl", "cards"]:
+                    if len(aslist) == 6:
+                        color = aslist[4]
+                        if color in ['deprecated', 'status', 'tempCards', 'optionCards']:
+                            continue
+
+                        card_name = aslist[5].split('.')[0]
+                        if card_name:
+                            with zf.open(pathfn) as card_file:
+                                raw_card = card_file.read()
+
+                            clsdata = ClassData(Reader(raw_card))
+
+                            out = StringIO()
+                            disassembled = Disassembler(clsdata, out.write, roundtrip=False).disassemble()
+                            out.seek(0)
+
+                            cname_re = re.compile(r".*ldc '([A-Za-z0-9 ]*).*'")
+                            ctype_re = re.compile(r".*AbstractCard\$CardType ([A-Z]*) .*")
+                            crarity_re = re.compile(r".*AbstractCard\$CardRarity ([A-Z]*) .*")
+                            ctarget_re = re.compile(r".*AbstractCard\$CardTarget ([A-Z]*) .*")
+
+                            cname = None
+                            ctype = None
+                            crarity = None
+                            ctarget = None
+                            for line in out:
+                                found = False
+
+                                if cname is None:
+                                    cname_match = cname_re.match(line)
+                                    if cname_match:
+                                        cname = cname_match[1]
+                                        found = True
+
+                                if not found and ctype is None:
+                                    ctype_match = ctype_re.match(line)
+                                    if ctype_match:
+                                        ctype = ctype_match[1]
+                                        found = True
+
+                                if not found and crarity is None:
+                                    ctype_match = crarity_re.match(line)
+                                    if ctype_match:
+                                        crarity = ctype_match[1]
+                                        found = True
+
+                                if not found and ctarget is None:
+                                    ctarget_match = ctarget_re.match(line)
+                                    if ctarget_match:
+                                        ctarget = ctarget_match[1]
+                                        found = True
+
+                                #if not found:
+                                #    print(line)
+
+                            all_cards[cname] = Card(card_name, cname, color, ctype, crarity, ctarget)
+                            print(f"Found {color}: {card_name} '{cname}' ({ctype}/{crarity}/{ctarget})")
 
 
 save_key = "key"
@@ -166,6 +244,7 @@ class MainFrame(wx.Frame):
             try:
                 self.decoded = self.spire.load_file(self.filename)
                 self.load_settings(self.decoded)
+                self.load_cards(self.decoded)
                 self.load_metrics(self.decoded)
 
                 print(self.spire.as_str(self.decoded))
@@ -202,7 +281,6 @@ class MainFrame(wx.Frame):
             settings_dict=self.settings_dict
         )
         self.spire.save_file(self.filename, saveobj)
-
 
     def load_settings(self, data):
         self.settings_dict = {}
@@ -291,6 +369,24 @@ class MainFrame(wx.Frame):
                 continue
             print(key, data[key])
 
+    def load_cards(self, data):
+        deck = []
+        for card in data["obtained_cards"]:
+            for count in range(data["obtained_cards"][card]):
+                deck.append(all_cards[card])
+
+        for card in sorted(deck):
+            card_name = wx.StaticText(self.Cards, wx.ID_ANY, card.name)
+            self.cards_sizer.Add(card_name, 0, 0, 0)
+            
+            remove_button = wx.Button(self.Cards, 30, "Remove", (20, 160), style=wx.NO_BORDER)
+            # bind the button to do something
+            self.cards_sizer.Add(remove_button)
+
+        self.Cards.FitInside()
+        self.Cards.Layout()
+        return
+
     def load_metrics(self, data):
         metrics_dict = {}
         for key, widget, transform, kw in [
@@ -357,10 +453,16 @@ class MainFrame(wx.Frame):
         self.settings_sizer = wx.FlexGridSizer(0, 2, 1, 3)
 
         # build card panel
-        self.Cards = wx.Panel(self.TabPanel, wx.ID_ANY)
+        self.Cards = wx.ScrolledWindow(
+            self.TabPanel,
+            wx.ID_ANY,
+            wx.DefaultPosition,
+            wx.DefaultSize,
+            wx.HSCROLL|wx.VSCROLL
+        )        
+        self.Cards.SetScrollRate( 5,5 )
         self.TabPanel.AddPage(self.Cards, "Cards")
-        self.cards_sizer = wx.BoxSizer(wx.VERTICAL)
-        self.cards_sizer.Add((0, 0), 0, 0, 0)
+        self.cards_sizer = wx.FlexGridSizer(0, 2, 1, 3)
 
         # build artifacts panel
         self.Artifacts = wx.Panel(self.TabPanel, wx.ID_ANY)
