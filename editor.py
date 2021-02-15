@@ -56,6 +56,7 @@ with zipfile.ZipFile("../desktop-1.0.jar", 'r') as zf:
 
             if reg:
                 NEOW_CHOICES.append(reg.groups()[0])
+        NEOW_CHOICES.append("")  # yeah, for real.
     else:
         print('neow data is not available')
 
