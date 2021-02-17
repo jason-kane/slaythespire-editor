@@ -19,6 +19,8 @@ NEOW_CHOICES = []
 ROOM_CHOICES = []
 all_cards = {}
 
+colors = set()
+
 class Card:
     def __init__(self, id, name, color, card_type, rarity, target):
         self.id = id
@@ -81,6 +83,8 @@ with zipfile.ZipFile("../desktop-1.0.jar", 'r') as zf:
                         if color in ['deprecated', 'status', 'tempCards', 'optionCards']:
                             continue
 
+                        colors.add(color)
+
                         card_name = aslist[5].split('.')[0]
                         if card_name:
                             with zf.open(pathfn) as card_file:
@@ -92,10 +96,14 @@ with zipfile.ZipFile("../desktop-1.0.jar", 'r') as zf:
                             disassembled = Disassembler(clsdata, out.write, roundtrip=False).disassemble()
                             out.seek(0)
 
-                            cname_re = re.compile(r".*ldc '([A-Za-z0-9 ]*).*'")
+                            cname_re = re.compile(r".*ldc '([A-Za-z0-9_ ]*).*'")
                             ctype_re = re.compile(r".*AbstractCard\$CardType ([A-Z]*) .*")
                             crarity_re = re.compile(r".*AbstractCard\$CardRarity ([A-Z]*) .*")
                             ctarget_re = re.compile(r".*AbstractCard\$CardTarget ([A-Z]*) .*")
+
+                            # if card_name == "Strike_Green":
+                            #     print(out.read())
+                            #     out.seek(0)
 
                             cname = None
                             ctype = None
@@ -211,6 +219,127 @@ class SlaySave:
 
             saveobj[setting_key] = value
         return saveobj
+
+
+class SettingsPanel(wx.ScrolledWindow):
+    def __init__(self, parent, id, *args, **kwargs):
+        wx.ScrolledWindow.__init__(self, parent, id, *args, **kwargs)
+
+        self.SetScrollRate(5, 5)
+        
+        self.sizer = wx.FlexGridSizer(0, 2, 1, 3)
+        self.SetSizer(self.sizer)
+
+
+class DeckPanel(wx.ScrolledWindow):
+    def __init__(self, parent, id, *args, **kwargs):
+        wx.ScrolledWindow.__init__(self, parent, id, *args, **kwargs)
+
+        self.SetScrollRate(5, 5)
+
+        self.sizer = wx.BoxSizer(wx.VERTICAL)
+        self.SetSizer(self.sizer)
+        self.bindery = {}
+
+    def add_card(self, card_obj):
+        remove_button = wx.Button(
+            self,
+            wx.ID_ANY,
+            card_obj.name,
+            (20, 160),
+            style=wx.NO_BORDER
+        )
+        # bind the button to do something
+        self.Bind(wx.EVT_BUTTON, self.remove_card, remove_button)
+        sizer_item = self.sizer.Add(remove_button)
+        self.bindery[remove_button.GetId()] = remove_button
+
+        self.sizer.Layout()
+
+    def remove_card(self, event):
+        print(f"Add event: {event}")
+        event_id = event.GetId()
+        print(f"event_id: {event_id}")
+        #print(f"button: {self.bindery[event_id]}")
+        #print(f"dir(button): {dir(self.bindery[event_id])}")
+        #self.sizer.Remove(
+        self.bindery[event_id].Destroy()
+
+        self.sizer.Layout()
+
+
+class ColorPanel(wx.ScrolledWindow):
+    bindery = {}
+
+    def OnClick(self, event):
+        print(f"Add event: {event}")
+        event_id = event.GetId()
+        print(f"event_id: {event_id}")
+        print(f"bindery[{event_id}] = {self.bindery.get(event_id, 'Missing')}")
+
+        print(dir(self))
+        library = self.GetParent()
+        card = library.GetParent()
+        card.deck.add_card(self.bindery[event_id])
+
+    def add_cards(self, color):
+        for card_name in all_cards:
+
+            card = all_cards[card_name]
+            if card.color == color:
+                add_button = wx.Button(self, wx.ID_ANY, card.name)
+                self.Bind(wx.EVT_BUTTON, self.OnClick, add_button)
+                self.bindery[add_button.GetId()] = card
+                self.sizer.Add(add_button)
+
+
+    def __init__(self, color, parent, id, *args, **kwargs):
+        wx.ScrolledWindow.__init__(self, parent, id, *args, **kwargs)
+
+        self.SetScrollRate(5, 5)
+        self.sizer = wx.FlexGridSizer(0, 2, 1, 3)
+        self.SetSizer(self.sizer)
+
+        self.add_cards(color)
+
+
+class LibraryPanel(wx.Notebook):
+    def __init__(self, parent, id, *args, **kwargs):
+        wx.Notebook.__init__(self, parent, id, *args, **kwargs)
+
+        self.color = {}
+        for color in colors:
+            self.color[color] = ColorPanel(color, self, wx.ID_ANY)
+            self.AddPage(self.color[color], color)
+
+        self.sizer = wx.FlexGridSizer(0, 2, 1, 3)
+        # self.sizer = wx.BoxSizer(wx.VERTICAL)
+        # self.sizer.Add(self)
+        self.SetSizer(self.sizer)
+
+
+class CardPanel(wx.Panel):
+    def __init__(self, parent, id, *args, **kwargs):
+        wx.Panel.__init__(self, parent, id, *args, **kwargs)
+
+        self.deck = DeckPanel(
+            self,
+            wx.ID_ANY,
+            wx.DefaultPosition,
+            (130, 20),
+            wx.VSCROLL
+        )
+
+        self.library = LibraryPanel(
+            self,
+            wx.ID_ANY
+        )
+
+        self.sizer = wx.BoxSizer(wx.HORIZONTAL)
+        self.sizer.Add(self.deck, 0, wx.EXPAND)
+        self.sizer.Add(self.library, 1, wx.EXPAND)
+
+        self.SetSizer(self.sizer)
 
 
 class MainFrame(wx.Frame):
@@ -344,7 +473,7 @@ class MainFrame(wx.Frame):
         ]:
             if key in data:
                 label = wx.StaticText(self.Settings, wx.ID_ANY, key)
-                self.settings_sizer.Add(label, 0, 0, 0)
+                self.Settings.sizer.Add(label, 0, 0, 0)
 
                 value = transform(data[key])
                 if widget in [wx.SpinCtrl, wx.TextCtrl]:
@@ -361,7 +490,7 @@ class MainFrame(wx.Frame):
                         raise
                     self.settings_dict[key].SetSelection(index)
 
-                self.settings_sizer.Add(self.settings_dict[key], 0, 0, 0)
+                self.Settings.sizer.Add(self.settings_dict[key], 0, 0, 0)
 
         self.Settings.FitInside()
         self.Settings.Layout()
@@ -372,19 +501,16 @@ class MainFrame(wx.Frame):
 
     def load_cards(self, data):
         deck = []
-        for card in data["obtained_cards"]:
-            for count in range(data["obtained_cards"][card]):
-                deck.append(all_cards[card])
+        for card in data["cards"]:
+            print(f"card: {card}")
+            deck.append(all_cards[card["id"]])
 
         for card in sorted(deck):
-            card_name = wx.StaticText(self.Cards, wx.ID_ANY, card.name)
-            self.cards_sizer.Add(card_name, 0, 0, 0)
-            
-            remove_button = wx.Button(self.Cards, 30, "Remove", (20, 160), style=wx.NO_BORDER)
-            # bind the button to do something
-            self.cards_sizer.Add(remove_button)
+            #card_name = wx.StaticText(self.Cards, wx.ID_ANY, card.name)
+            self.Cards.deck.add_card(card)
 
-        self.Cards.FitInside()
+        self.Cards.deck.FitInside()
+        self.Cards.deck.Layout()
         self.Cards.Layout()
         return
 
@@ -442,28 +568,22 @@ class MainFrame(wx.Frame):
         self.TabPanel = wx.Notebook(self, wx.ID_ANY)
 
         # build settings panel
-        self.Settings = wx.ScrolledWindow(
+        self.Settings = SettingsPanel(
             self.TabPanel,
             wx.ID_ANY,
             wx.DefaultPosition,
             wx.DefaultSize,
             wx.HSCROLL|wx.VSCROLL
         )
-        self.Settings.SetScrollRate( 5, 5 )
         self.TabPanel.AddPage(self.Settings, "Settings")
-        self.settings_sizer = wx.FlexGridSizer(0, 2, 1, 3)
 
         # build card panel
-        self.Cards = wx.ScrolledWindow(
+        self.Cards = CardPanel(
             self.TabPanel,
             wx.ID_ANY,
-            wx.DefaultPosition,
-            wx.DefaultSize,
-            wx.HSCROLL|wx.VSCROLL
-        )        
-        self.Cards.SetScrollRate( 5,5 )
+        )       
         self.TabPanel.AddPage(self.Cards, "Cards")
-        self.cards_sizer = wx.FlexGridSizer(0, 2, 1, 3)
+
 
         # build artifacts panel
         self.Artifacts = wx.Panel(self.TabPanel, wx.ID_ANY)
@@ -491,9 +611,7 @@ class MainFrame(wx.Frame):
 
 
         self.Artifacts.SetSizer(self.artifacts_sizer)
-        self.Cards.SetSizer(self.cards_sizer)
         self.Potions.SetSizer(self.potions_sizer)
-        self.Settings.SetSizer(self.settings_sizer)
         self.Metrics.SetSizer(self.metrics_sizer)
 
         self.Layout()
