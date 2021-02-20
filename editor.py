@@ -13,11 +13,13 @@ from Krakatau.classfileformat.classdata import ClassData
 from Krakatau.assembler.disassembly import Disassembler
 
 
+RELIC_TIERS = ["common", "uncommon", "rare", "boss", "shop"]
 NEOW_CHOICES = []
 # ok.. so we're going to reach inside the StS jar and decompile some java classes to rip out
 # what we want.  Why?  Well, because we can.
 ROOM_CHOICES = []
 all_cards = {}
+all_relics = {}
 
 colors = set()
 
@@ -30,6 +32,18 @@ class Card:
         self.rarity = rarity
         self.target = target
 
+    def __str__(self):
+        return "Card:{}".format(
+            json.dumps({
+                'id': self.id,
+                'name': self.name,
+                'color': self.color,
+                'type': self.type,
+                'rarity': self.rarity,
+                'target': self.target
+            })
+        )
+
     def __lt__(self, other):
         # so we can sort
         return self.name < other.name
@@ -38,112 +52,180 @@ class Card:
         return self.id == other.id
 
 
-with zipfile.ZipFile("../desktop-1.0.jar", 'r') as zf:
-    # find NEOW_CHOICES in the class file.. because why not.
-    namelist = zf.namelist()
+class Relic:
+    def __init__(self, name, tier):
+        self.name = name
+        self.tier = tier
 
-    neow_fn = "com/megacrit/cardcrawl/neow/NeowReward$NeowRewardType.class"
-    if neow_fn in namelist:
-        with zf.open(neow_fn, 'r') as neow_file:
-            raw_class = neow_file.read()
 
-        clsdata = ClassData(Reader(raw_class))
+def initialize():
+    global NEOW_CHOICES
+    global ROOM_CHOICES
+    global all_cards
+    global all_relics
+    global colors
 
-        out = StringIO()
-        disassembled = Disassembler(clsdata, out.write, roundtrip=False).disassemble()
-        out.seek(0)
+    with zipfile.ZipFile("../desktop-1.0.jar", 'r') as zf:
+        # find NEOW_CHOICES in the class file.. because why not.
+        namelist = zf.namelist()
 
-        for line in out:
-            reg = re.match(r".*getstatic Field \[c4\] ([A-Z0-9_]*) \[u50\].*", line)
+        neow_fn = "com/megacrit/cardcrawl/neow/NeowReward$NeowRewardType.class"
+        if neow_fn in namelist:
+            with zf.open(neow_fn, 'r') as neow_file:
+                raw_class = neow_file.read()
 
-            if reg:
-                NEOW_CHOICES.append(reg.groups()[0])
-        NEOW_CHOICES.append("")  # yeah, for real.
-    else:
-        print('neow data is not available')
+            clsdata = ClassData(Reader(raw_class))
 
-    # to populate the 'room' dropdown we can make some assumptions based
-    # on which files exist in the jar
-    for pathfn in namelist:
-        aslist = pathfn.split('/')
-        if aslist[0] == "com":
-            if aslist[1] == "megacrit":
-                # print(aslist)
-                if aslist[:4] == ["com", "megacrit", "cardcrawl", "rooms"]:
-                    if "$" in aslist[-1] or not aslist[-1]:
-                        continue
+            out = StringIO()
+            disassembled = Disassembler(clsdata, out.write, roundtrip=False).disassemble()
+            out.seek(0)
 
-                    aslist[-1] = aslist[-1].split('.')[0]  # trim off .class extension
-                    clean = ".".join(aslist)
-                    ROOM_CHOICES.append(clean)
+            for line in out:
+                reg = re.match(r".*getstatic Field \[c4\] ([A-Z0-9_]*) \[u50\].*", line)
 
-                elif aslist[:4] == ["com", "megacrit", "cardcrawl", "cards"]:
-                    if len(aslist) == 6:
-                        color = aslist[4]
-                        if color in ['deprecated', 'status', 'tempCards', 'optionCards']:
+                if reg:
+                    NEOW_CHOICES.append(reg.groups()[0])
+            NEOW_CHOICES.append("")  # yeah, for real.
+        else:
+            print('neow data is not available')
+
+        # to populate the 'room' dropdown we can make some assumptions based
+        # on which files exist in the jar
+        for pathfn in namelist:
+            aslist = pathfn.split('/')
+            if aslist[0] == "com":
+                if aslist[1] == "megacrit":
+                    # print(aslist)
+                    if aslist[:4] == ["com", "megacrit", "cardcrawl", "rooms"]:
+                        if "$" in aslist[-1] or not aslist[-1]:
                             continue
 
-                        colors.add(color)
+                        aslist[-1] = aslist[-1].split('.')[0]  # trim off .class extension
+                        clean = ".".join(aslist)
+                        ROOM_CHOICES.append(clean)
 
-                        card_name = aslist[5].split('.')[0]
-                        if card_name:
-                            with zf.open(pathfn) as card_file:
-                                raw_card = card_file.read()
+                    elif aslist[:4] == ["com", "megacrit", "cardcrawl", "cards"]:
+                        if len(aslist) == 6:
+                            color = aslist[4]
+                            if color in ['deprecated', 'status', 'tempCards', 'optionCards']:
+                                continue
 
+                            colors.add(color)
+
+                            card_name = aslist[5].split('.')[0]
+                            if card_name:
+                                with zf.open(pathfn) as card_file:
+                                    raw_card = card_file.read()
+
+                                clsdata = ClassData(Reader(raw_card))
+
+                                out = StringIO()
+                                disassembled = Disassembler(clsdata, out.write, roundtrip=False).disassemble()
+                                out.seek(0)
+
+                                cname_re = re.compile(r".*ldc '([A-Za-z0-9_ ]*).*'")
+                                ctype_re = re.compile(r".*AbstractCard\$CardType ([A-Z]*) .*")
+                                crarity_re = re.compile(r".*AbstractCard\$CardRarity ([A-Z]*) .*")
+                                ctarget_re = re.compile(r".*AbstractCard\$CardTarget ([A-Z]*) .*")
+
+                                # if card_name == "Strike_Green":
+                                #     print(out.read())
+                                #     out.seek(0)
+
+                                cname = None
+                                ctype = None
+                                crarity = None
+                                ctarget = None
+                                for line in out:
+                                    found = False
+
+                                    if cname is None:
+                                        cname_match = cname_re.match(line)
+                                        if cname_match:
+                                            cname = cname_match[1]
+                                            found = True
+
+                                    if not found and ctype is None:
+                                        ctype_match = ctype_re.match(line)
+                                        if ctype_match:
+                                            ctype = ctype_match[1]
+                                            found = True
+
+                                    if not found and crarity is None:
+                                        ctype_match = crarity_re.match(line)
+                                        if ctype_match:
+                                            crarity = ctype_match[1]
+                                            found = True
+
+                                    if not found and ctarget is None:
+                                        ctarget_match = ctarget_re.match(line)
+                                        if ctarget_match:
+                                            ctarget = ctarget_match[1]
+                                            found = True
+
+                                    #if not found:
+                                    #    print(line)
+
+                                all_cards[cname] = Card(card_name, cname, color, ctype, crarity, ctarget)
+                                print(f"Found {all_cards[cname]}")
+
+                    elif aslist[:4] == ["com", "megacrit", "cardcrawl", "relics"]:
+                        
+                        if aslist[4] in ['deprecated', 'AbstractRelic.class']:
+                            continue
+
+                        if "$" in aslist[-1] or not aslist[-1]:
+                            continue
+
+                        with zf.open(pathfn) as card_file:
+                            raw_card = card_file.read()
+                                
                             clsdata = ClassData(Reader(raw_card))
 
                             out = StringIO()
                             disassembled = Disassembler(clsdata, out.write, roundtrip=False).disassemble()
                             out.seek(0)
 
-                            cname_re = re.compile(r".*ldc '([A-Za-z0-9_ ]*).*'")
-                            ctype_re = re.compile(r".*AbstractCard\$CardType ([A-Z]*) .*")
-                            crarity_re = re.compile(r".*AbstractCard\$CardRarity ([A-Z]*) .*")
-                            ctarget_re = re.compile(r".*AbstractCard\$CardTarget ([A-Z]*) .*")
+                            tier_re = re.compile(r"AbstractRelic\$RelicTier ([A-Za-z0-9_]*) .*'")
+                            name_re = re.compile(r"ID Ljava/lang/String; = '([A-Za-z0-9_ ]*)'")
 
-                            # if card_name == "Strike_Green":
-                            #     print(out.read())
-                            #     out.seek(0)
-
-                            cname = None
-                            ctype = None
-                            crarity = None
-                            ctarget = None
+                            name = None
+                            tier = None
                             for line in out:
+                                # print(line)
                                 found = False
 
-                                if cname is None:
-                                    cname_match = cname_re.match(line)
-                                    if cname_match:
-                                        cname = cname_match[1]
-                                        found = True
+                                for regexp, var in (
+                                    (tier_re, tier),
+                                    (name_re, name)):
 
-                                if not found and ctype is None:
-                                    ctype_match = ctype_re.match(line)
-                                    if ctype_match:
-                                        ctype = ctype_match[1]
-                                        found = True
+                                    if var is None:
+                                        rematch = regexp.match(line)
+                                        if rematch:
+                                            var = rematch[1]
+                                            found = True
 
-                                if not found and crarity is None:
-                                    ctype_match = crarity_re.match(line)
-                                    if ctype_match:
-                                        crarity = ctype_match[1]
-                                        found = True
-
-                                if not found and ctarget is None:
-                                    ctarget_match = ctarget_re.match(line)
-                                    if ctarget_match:
-                                        ctarget = ctarget_match[1]
-                                        found = True
-
-                                #if not found:
-                                #    print(line)
-
-                            all_cards[cname] = Card(card_name, cname, color, ctype, crarity, ctarget)
-                            print(f"Found {color}: {card_name} '{cname}' ({ctype}/{crarity}/{ctarget})")
-
+                            if name:
+                                all_relics[name] = Relic(name, tier)
 
 save_key = "key"
+
+def as_spinbox(value):
+    # convert the values STS uses to indicate an integer to the values
+    # wx.SpinBox expects
+    return str(value)
+
+def as_checkbox(value):
+    # convert the values STS uses to indicate True/False to the values
+    # wx.CheckBox expects to indicate checked/unchecked.
+    return 1 if value else 0
+
+def as_textctrl(value):
+    return str(value)
+
+def as_choice(value):
+    return value
+
 
 class SlaySave:
 
@@ -193,7 +275,7 @@ class SlaySave:
         print(f"Saved as {filename}.backUp")            
         return
 
-    def assemble_saveobj(self, decoded, settings_dict):
+    def assemble_saveobj(self, decoded, settings_dict, deck):
         """Return a json string of the data for this save."""
         saveobj = decoded.copy()
         
@@ -217,6 +299,15 @@ class SlaySave:
                             value.append(widget.GetLineText(index))
                         value = "\n".join(value)
 
+                elif setting_key == "cards":
+                    value = []
+                    for card in deck:
+                        value.append({
+                            "upgrades": 0,
+                            "misc": 0,
+                            "id": card.name
+                        })
+
             saveobj[setting_key] = value
         return saveobj
 
@@ -224,14 +315,112 @@ class SlaySave:
 class SettingsPanel(wx.ScrolledWindow):
     def __init__(self, parent, id, *args, **kwargs):
         wx.ScrolledWindow.__init__(self, parent, id, *args, **kwargs)
-
+        self.settings_dict = {}
+        self.labels_dict = {}
         self.SetScrollRate(5, 5)
         
         self.sizer = wx.FlexGridSizer(0, 2, 1, 3)
         self.SetSizer(self.sizer)
 
+    def load_settings(self, data):
+        clean = False
+        for key in list(self.settings_dict.keys()):
+            self.settings_dict.pop(key).Destroy()
+            self.labels_dict.pop(key).Destroy()
+            clean = True
+
+        if clean:
+            self.sizer.Layout()
+
+        for key, widget, transform, kw in [
+            ["act_num", wx.SpinCtrl, as_spinbox, {'min': 0, 'max': 1000}],
+            ["ai_seed_count", wx.SpinCtrl, as_spinbox, {'min': 0, 'max': 1000}],
+            ["ascension_level", wx.SpinCtrl, as_spinbox, {'min': 0, 'max': 1000}],
+            ["blue", wx.SpinCtrl, as_spinbox, {'min': 0, 'max': 1000}],
+            ["boss", wx.TextCtrl, as_textctrl, {}],
+            ["card_seed_count", wx.SpinCtrl, as_spinbox, {'min': 0, 'max': 1000}],
+            ["champions", wx.SpinCtrl, as_spinbox, {'min': 0, 'max': 1000}],
+            ["chose_neow_reward", wx.CheckBox, as_checkbox, {}],
+            ["combo", wx.CheckBox, as_checkbox, {}],
+            ["current_health", wx.SpinCtrl, as_spinbox, {'min': 0, 'max': 1000}],
+            ["current_room", wx.Choice, as_choice, {'choices': ROOM_CHOICES}],
+            ["elites1_killed", wx.SpinCtrl, as_spinbox, {'min': 0, 'max': 1000}],
+            ["elites2_killed", wx.SpinCtrl, as_spinbox, {'min': 0, 'max': 1000}],
+            ["elites3_killed", wx.SpinCtrl, as_spinbox, {'min': 0, 'max': 1000}],
+            ["event_seed_count", wx.SpinCtrl, as_spinbox, {'min': 0, 'max': 100}],
+            ["floor_num", wx.SpinCtrl, as_spinbox, {'min': 0, 'max': 100}],
+            ["gold", wx.SpinCtrl, as_spinbox, {'min': 0, 'max': 100000}],
+            ["gold_gained", wx.SpinCtrl, as_spinbox, {'min': 0, 'max': 100000}],
+            ["green", wx.SpinCtrl, as_spinbox, {'min': 0, 'max': 1000}],
+            ["hand_size", wx.SpinCtrl, as_spinbox, {'min': 0, 'max': 100}],
+            ["has_emerald_key", wx.CheckBox, as_checkbox, {}],
+            ["has_ruby_key", wx.CheckBox, as_checkbox, {}],
+            ["has_sapphire_key", wx.CheckBox, as_checkbox, {}],
+            ["is_ascension_mode", wx.CheckBox, as_checkbox, {}],
+            ["is_daily", wx.CheckBox, as_checkbox, {}],
+            ["is_endless_mode", wx.CheckBox, as_checkbox, {}],
+            ["is_final_act_on", wx.CheckBox, as_checkbox, {}],
+            ["is_trial", wx.CheckBox, as_checkbox, {}],
+            ["level_name", wx.TextCtrl, as_textctrl, {}],
+            ["max_health", wx.SpinCtrl, as_spinbox, {'min': 0, 'max': 1000}],
+            ["max_orbs", wx.SpinCtrl, as_spinbox, {'min': 0, 'max': 100}],
+            ["merchant_seed_count", wx.SpinCtrl, as_spinbox, {'min': 0, 'max': 100}],
+            ["monster_seed_count", wx.SpinCtrl, as_spinbox, {'min': 0, 'max': 1000}],
+            ["monsters_killed", wx.SpinCtrl, as_spinbox, {'min': 0, 'max': 1000}],
+            ["mugged", wx.CheckBox, as_checkbox, {}],
+            ["mystery_machine", wx.SpinCtrl, as_spinbox, {'min': 0, 'max': 1000}],
+            ["name", wx.TextCtrl, as_textctrl, {}],
+            ["neow_bonus", wx.Choice, as_choice, {'choices': NEOW_CHOICES}],
+            ["overkill", wx.CheckBox, as_checkbox, {}],
+            ["perfect", wx.SpinCtrl, as_spinbox, {'min': 0, 'max': 100}],
+            ["play_time", wx.SpinCtrl, as_spinbox, {'min': 0, 'max': 10000}],
+            ["post_combat", wx.CheckBox, as_checkbox, {}],
+            ["potion_chance", wx.SpinCtrl, as_spinbox, {'min': 0, 'max': 1000}],
+            ["potion_slots", wx.SpinCtrl, as_spinbox, {'min': 0, 'max': 1000}],
+            ["purgeCost", wx.SpinCtrl, as_spinbox, {'min': 0, 'max': 1000}],
+            ["red", wx.SpinCtrl, as_spinbox, {'min': 0, 'max': 1000}],
+            ["relic_seed_count", wx.SpinCtrl, as_spinbox, {'min': 0, 'max': 1000}],
+            ["save_date", wx.TextCtrl, as_textctrl, {}],
+            ["seed", wx.TextCtrl, as_textctrl, {}],
+            ["seed_set", wx.CheckBox, as_checkbox, {}],
+            ["shuffle_seed_count", wx.SpinCtrl, as_spinbox, {'min': 0, 'max': 100}],
+            ["smoked", wx.CheckBox, as_checkbox, {}],
+            ["special_seed", wx.SpinCtrl, as_spinbox, {'min': 0, 'max': 1000}],
+            ["spirit_count", wx.SpinCtrl, as_spinbox, {'min': 0, 'max': 1000}],
+            ["treasure_seed_count", wx.SpinCtrl, as_spinbox, {'min': 0, 'max': 1000}],
+        ]:
+            if key in data:
+                label = wx.StaticText(self, wx.ID_ANY, key)
+                self.sizer.Add(label, 0, 0, 0)
+                self.labels_dict[key] = label
+
+                value = transform(data[key])
+                if widget in [wx.SpinCtrl, wx.TextCtrl]:
+                    kw["value"] = value
+
+                self.settings_dict[key] = widget(self, wx.ID_ANY, **kw)
+                if widget in [wx.CheckBox]:
+                    self.settings_dict[key].SetValue(value)
+                elif widget in [wx.Choice]:
+                    try:
+                        index = kw["choices"].index(value)
+                    except ValueError:
+                        print(f'Expected {key} to know about {value} (but it does not)')
+                        raise
+                    self.settings_dict[key].SetSelection(index)
+
+                self.sizer.Add(self.settings_dict[key], 0, 0, 0)
+
+        self.FitInside()
+        self.Layout()
+        for key in data:
+            if key in self.settings_dict:
+                continue
+            print(key, data[key])
+
 
 class DeckPanel(wx.ScrolledWindow):
+
     def __init__(self, parent, id, *args, **kwargs):
         wx.ScrolledWindow.__init__(self, parent, id, *args, **kwargs)
 
@@ -240,6 +429,8 @@ class DeckPanel(wx.ScrolledWindow):
         self.sizer = wx.BoxSizer(wx.VERTICAL)
         self.SetSizer(self.sizer)
         self.bindery = {}
+        self.event_id_to_card = {}
+        self.cards = []
 
     def add_card(self, card_obj):
         remove_button = wx.Button(
@@ -253,19 +444,38 @@ class DeckPanel(wx.ScrolledWindow):
         self.Bind(wx.EVT_BUTTON, self.remove_card, remove_button)
         sizer_item = self.sizer.Add(remove_button)
         self.bindery[remove_button.GetId()] = remove_button
-
+        self.event_id_to_card[remove_button.GetId()] = card_obj
         self.sizer.Layout()
+        self.cards.append(card_obj)
 
     def remove_card(self, event):
         print(f"Add event: {event}")
         event_id = event.GetId()
         print(f"event_id: {event_id}")
-        #print(f"button: {self.bindery[event_id]}")
-        #print(f"dir(button): {dir(self.bindery[event_id])}")
-        #self.sizer.Remove(
         self.bindery[event_id].Destroy()
-
         self.sizer.Layout()
+
+        card = self.event_id_to_card[event_id]
+        print(f"Removing card {card}")
+        self.cards.remove(card)
+        del self.event_id_to_card[event_id]
+
+    def load_cards(self, data):
+        deck = []
+        for card in data["cards"]:
+            print(f"card: {card}")
+            deck.append(all_cards[card["id"]])
+
+        for card in sorted(deck):
+            self.add_card(card)
+
+        self.FitInside()
+        self.Layout()
+        self.GetParent().Layout()
+        return
+
+    def get_cards(self):
+        return self.cards
 
 
 class ColorPanel(wx.ScrolledWindow):
@@ -277,7 +487,6 @@ class ColorPanel(wx.ScrolledWindow):
         print(f"event_id: {event_id}")
         print(f"bindery[{event_id}] = {self.bindery.get(event_id, 'Missing')}")
 
-        print(dir(self))
         library = self.GetParent()
         card = library.GetParent()
         card.deck.add_card(self.bindery[event_id])
@@ -342,25 +551,160 @@ class CardPanel(wx.Panel):
         self.SetSizer(self.sizer)
 
 
+class MyRelicPanel(wx.ScrolledWindow):
+    def __init__(self, parent, id, *args, **kwargs):
+        wx.ScrolledWindow.__init__(self, parent, id, *args, **kwargs)
+
+        self.SetScrollRate(5, 5)
+
+        self.sizer = wx.BoxSizer(wx.VERTICAL)
+        self.SetSizer(self.sizer)
+        self.bindery = {}
+        self.event_id_to_relic = {}
+        self.cards = []
+
+    def add_relic(self, relic_obj):
+        remove_button = wx.Button(
+            self,
+            wx.ID_ANY,
+            card_obj.name,
+            (20, 160),
+            style=wx.NO_BORDER
+        )
+        # bind the button to do something
+        self.Bind(wx.EVT_BUTTON, self.remove_relic, remove_button)
+        sizer_item = self.sizer.Add(remove_button)
+        self.bindery[remove_button.GetId()] = remove_button
+        self.event_id_to_relic[remove_button.GetId()] = relic_obj
+        self.sizer.Layout()
+        self.relics.append(relic_obj)        
+
+    def remove_relic(self, event):
+        event_id = event.GetId()
+        self.bindery[event_id].Destroy()
+        self.sizer.Layout()
+
+        relic = self.event_id_to_relic[event_id]
+        print(f"Removing relic {relic}")
+        self.relics.remove(relic)
+        del self.event_id_to_relic[event_id]        
+
+    def load_relics(self, data):
+        for relic_name in data["relics"]:
+            self.add_relic(all_relics[relic_name])
+
+
+class RelicTierPanel(wx.ScrolledWindow):
+    bindery = {}
+
+    def OnClick(self, event):
+        print(f"Add relic event: {event}")
+        event_id = event.GetId()
+        print(f"event_id: {event_id}")
+        print(f"bindery[{event_id}] = {self.bindery.get(event_id, 'Missing')}")
+
+        self.my_relics.add_relic(self.bindery[event_id])
+
+    def add_relics(self, tier):
+        for relic in all_relics:
+            if relic.tier != tier:
+                continue
+
+            add_button = wx.Button(self, wx.ID_ANY, relic.name)
+            self.Bind(wx.EVT_BUTTON, self.OnClick, add_button)
+            self.bindery[add_button.GetId()] = relic
+            self.sizer.Add(add_button)
+
+    def __init__(self, tier, parent, id, *args, **kwargs):
+        wx.ScrolledWindow.__init__(self, parent, id, *args, **kwargs)
+
+        self.my_relics = parent.GetParent().my_relics
+
+        self.SetScrollRate(5, 5)
+        self.sizer = wx.FlexGridSizer(0, 2, 1, 3)
+        self.SetSizer(self.sizer)
+        self.bindery = {}
+
+        self.add_relics(tier)
+
+class AllRelicPanel(wx.Notebook):
+
+    def __init__(self, parent, id, *args, **kwargs):
+        wx.Notebook.__init__(self, parent, id, *args, **kwargs)
+
+        self.color = {}
+        for tier in RELIC_TIERS:
+            setattr(self, tier, RelicTierPanel(tier, self, wx.ID_ANY))
+            self.AddPage(getattr(self, tier), tier)
+
+        self.sizer = wx.FlexGridSizer(0, 2, 1, 3)
+        self.SetSizer(self.sizer)
+
+
+class RelicPanel(wx.Panel):
+
+    def __init__(self, parent, id, *args, **kwargs):
+        wx.Panel.__init__(self, parent, id, *args, **kwargs)
+
+        self.my_relics = MyRelicPanel(self, wx.ID_ANY)
+        self.all_relics = AllRelicPanel(self, wx.ID_ANY)
+        
+        self.sizer = wx.BoxSizer(wx.HORIZONTAL)
+        self.sizer.Add(self.my_relics, 0, wx.EXPAND)
+        self.sizer.Add(self.all_relics, 1, wx.EXPAND)
+
+        self.SetSizer(self.sizer)        
+
+
+class MetricPanel(wx.ScrolledWindow):
+    def __init__(self, parent, id, *args, **kwargs):
+        wx.ScrolledWindow.__init__(self, parent, id, *args, **kwargs)
+        self.SetScrollRate( 5, 5 )
+
+        self.sizer = wx.FlexGridSizer(0, 2, 1, 3)
+        self.SetSizer(self.sizer)
+
+    def load_metrics(self, data):
+        metrics_dict = {}
+        for key, widget, transform, kw in [
+            ["metric_build_version", wx.TextCtrl, as_textctrl, {}],           
+            ["metric_campfire_meditates", wx.SpinCtrl, as_spinbox, {'min': 0, 'max': 1000}],
+            ["metric_campfire_rested", wx.SpinCtrl, as_spinbox, {'min': 0, 'max': 1000}],  
+            ["metric_campfire_rituals", wx.SpinCtrl, as_spinbox, {'min': 0, 'max': 1000}],
+            ["metric_campfire_upgraded", wx.SpinCtrl, as_spinbox, {'min': 0, 'max': 1000}],
+            ["metric_floor_reached", wx.SpinCtrl, as_spinbox, {'min': 0, 'max': 1000}],
+            ["metric_playtime", wx.SpinCtrl, as_spinbox, {'min': 0, 'max': 1000}],
+            ["metric_purchased_purges", wx.SpinCtrl, as_spinbox, {'min': 0, 'max': 1000}],
+            ["metric_seed_played", wx.TextCtrl, as_textctrl, {}],
+        ]:
+            if key in data:
+                label = wx.StaticText(self, wx.ID_ANY, key)
+                self.sizer.Add(label, 0, 0, 0)
+
+                value = transform(data[key])
+                if widget in [wx.SpinCtrl, wx.TextCtrl]:
+                    kw["value"] = value
+
+                metrics_dict[key] = widget(self, wx.ID_ANY, **kw)
+                if widget in [wx.CheckBox]:
+                    metrics_dict[key].SetValue(value)
+                elif widget in [wx.Choice]:
+                    try:
+                        index = kw["choices"].index(value)
+                    except ValueError:
+                        print(f'Expected {key} to know about {value} (but it does not)')
+                        raise
+                    metrics_dict[key].SetSelection(index)
+
+                self.sizer.Add(metrics_dict[key], 0, 0, 0)
+
+        self.FitInside()
+        self.Layout()
+
+
 class MainFrame(wx.Frame):
     filename = ""
     settings_dict = {}
-
-    def as_spinbox(self, value):
-        # convert the values STS uses to indicate an integer to the values
-        # wx.SpinBox expects
-        return str(value)
-
-    def as_checkbox(self, value):
-        # convert the values STS uses to indicate True/False to the values
-        # wx.CheckBox expects to indicate checked/unchecked.
-        return 1 if value else 0
-
-    def as_textctrl(self, value):
-        return str(value)
-
-    def as_choice(self, value):
-        return value
 
     def on_open(self, event):
         print('Open file menu event triggered')
@@ -373,9 +717,10 @@ class MainFrame(wx.Frame):
             self.filename = fileDialog.GetPath()
             try:
                 self.decoded = self.spire.load_file(self.filename)
-                self.load_settings(self.decoded)
-                self.load_cards(self.decoded)
-                self.load_metrics(self.decoded)
+                self.Settings.load_settings(self.decoded)
+                self.Cards.deck.load_cards(self.decoded)
+                self.Metrics.load_metrics(self.decoded)
+                self.Relics.my_relics.load_relics(self.decoded)
 
                 print(self.spire.as_str(self.decoded))
                 self.Show()
@@ -408,148 +753,10 @@ class MainFrame(wx.Frame):
 
         saveobj = self.spire.assemble_saveobj(
             decoded=self.decoded,
-            settings_dict=self.settings_dict
+            settings_dict=self.settings_dict,
+            deck=self.Cards.deck.get_cards()
         )
         self.spire.save_file(self.filename, saveobj)
-
-    def load_settings(self, data):
-        self.settings_dict = {}
-        for key, widget, transform, kw in [
-            ["act_num", wx.SpinCtrl, self.as_spinbox, {'min': 0, 'max': 1000}],
-            ["ai_seed_count", wx.SpinCtrl, self.as_spinbox, {'min': 0, 'max': 1000}],
-            ["ascension_level", wx.SpinCtrl, self.as_spinbox, {'min': 0, 'max': 1000}],
-            ["blue", wx.SpinCtrl, self.as_spinbox, {'min': 0, 'max': 1000}],
-            ["boss", wx.TextCtrl, self.as_textctrl, {}],
-            ["card_seed_count", wx.SpinCtrl, self.as_spinbox, {'min': 0, 'max': 1000}],
-            ["champions", wx.SpinCtrl, self.as_spinbox, {'min': 0, 'max': 1000}],
-            ["chose_neow_reward", wx.CheckBox, self.as_checkbox, {}],
-            ["combo", wx.CheckBox, self.as_checkbox, {}],
-            ["current_health", wx.SpinCtrl, self.as_spinbox, {'min': 0, 'max': 1000}],
-            ["current_room", wx.Choice, self.as_choice, {'choices': ROOM_CHOICES}],
-            ["elites1_killed", wx.SpinCtrl, self.as_spinbox, {'min': 0, 'max': 1000}],
-            ["elites2_killed", wx.SpinCtrl, self.as_spinbox, {'min': 0, 'max': 1000}],
-            ["elites3_killed", wx.SpinCtrl, self.as_spinbox, {'min': 0, 'max': 1000}],
-            ["event_seed_count", wx.SpinCtrl, self.as_spinbox, {'min': 0, 'max': 100}],
-            ["floor_num", wx.SpinCtrl, self.as_spinbox, {'min': 0, 'max': 100}],
-            ["gold", wx.SpinCtrl, self.as_spinbox, {'min': 0, 'max': 100000}],
-            ["gold_gained", wx.SpinCtrl, self.as_spinbox, {'min': 0, 'max': 100000}],
-            ["green", wx.SpinCtrl, self.as_spinbox, {'min': 0, 'max': 1000}],
-            ["hand_size", wx.SpinCtrl, self.as_spinbox, {'min': 0, 'max': 100}],
-            ["has_emerald_key", wx.CheckBox, self.as_checkbox, {}],
-            ["has_ruby_key", wx.CheckBox, self.as_checkbox, {}],
-            ["has_sapphire_key", wx.CheckBox, self.as_checkbox, {}],
-            ["is_ascension_mode", wx.CheckBox, self.as_checkbox, {}],
-            ["is_daily", wx.CheckBox, self.as_checkbox, {}],
-            ["is_endless_mode", wx.CheckBox, self.as_checkbox, {}],
-            ["is_final_act_on", wx.CheckBox, self.as_checkbox, {}],
-            ["is_trial", wx.CheckBox, self.as_checkbox, {}],
-            ["level_name", wx.TextCtrl, self.as_textctrl, {}],
-            ["max_health", wx.SpinCtrl, self.as_spinbox, {'min': 0, 'max': 1000}],
-            ["max_orbs", wx.SpinCtrl, self.as_spinbox, {'min': 0, 'max': 100}],
-            ["merchant_seed_count", wx.SpinCtrl, self.as_spinbox, {'min': 0, 'max': 100}],
-            ["monster_seed_count", wx.SpinCtrl, self.as_spinbox, {'min': 0, 'max': 1000}],
-            ["monsters_killed", wx.SpinCtrl, self.as_spinbox, {'min': 0, 'max': 1000}],
-            ["mugged", wx.CheckBox, self.as_checkbox, {}],
-            ["mystery_machine", wx.SpinCtrl, self.as_spinbox, {'min': 0, 'max': 1000}],
-            ["name", wx.TextCtrl, self.as_textctrl, {}],
-            ["neow_bonus", wx.Choice, self.as_choice, {'choices': NEOW_CHOICES}],
-            ["overkill", wx.CheckBox, self.as_checkbox, {}],
-            ["perfect", wx.SpinCtrl, self.as_spinbox, {'min': 0, 'max': 100}],
-            ["play_time", wx.SpinCtrl, self.as_spinbox, {'min': 0, 'max': 10000}],
-            ["post_combat", wx.CheckBox, self.as_checkbox, {}],
-            ["potion_chance", wx.SpinCtrl, self.as_spinbox, {'min': 0, 'max': 1000}],
-            ["potion_slots", wx.SpinCtrl, self.as_spinbox, {'min': 0, 'max': 1000}],
-            ["purgeCost", wx.SpinCtrl, self.as_spinbox, {'min': 0, 'max': 1000}],
-            ["red", wx.SpinCtrl, self.as_spinbox, {'min': 0, 'max': 1000}],
-            ["relic_seed_count", wx.SpinCtrl, self.as_spinbox, {'min': 0, 'max': 1000}],
-            ["save_date", wx.TextCtrl, self.as_textctrl, {}],
-            ["seed", wx.TextCtrl, self.as_textctrl, {}],
-            ["seed_set", wx.CheckBox, self.as_checkbox, {}],
-            ["shuffle_seed_count", wx.SpinCtrl, self.as_spinbox, {'min': 0, 'max': 100}],
-            ["smoked", wx.CheckBox, self.as_checkbox, {}],
-            ["special_seed", wx.SpinCtrl, self.as_spinbox, {'min': 0, 'max': 1000}],
-            ["spirit_count", wx.SpinCtrl, self.as_spinbox, {'min': 0, 'max': 1000}],
-            ["treasure_seed_count", wx.SpinCtrl, self.as_spinbox, {'min': 0, 'max': 1000}],
-        ]:
-            if key in data:
-                label = wx.StaticText(self.Settings, wx.ID_ANY, key)
-                self.Settings.sizer.Add(label, 0, 0, 0)
-
-                value = transform(data[key])
-                if widget in [wx.SpinCtrl, wx.TextCtrl]:
-                    kw["value"] = value
-
-                self.settings_dict[key] = widget(self.Settings, wx.ID_ANY, **kw)
-                if widget in [wx.CheckBox]:
-                    self.settings_dict[key].SetValue(value)
-                elif widget in [wx.Choice]:
-                    try:
-                        index = kw["choices"].index(value)
-                    except ValueError:
-                        print(f'Expected {key} to know about {value} (but it does not)')
-                        raise
-                    self.settings_dict[key].SetSelection(index)
-
-                self.Settings.sizer.Add(self.settings_dict[key], 0, 0, 0)
-
-        self.Settings.FitInside()
-        self.Settings.Layout()
-        for key in data:
-            if key in self.settings_dict:
-                continue
-            print(key, data[key])
-
-    def load_cards(self, data):
-        deck = []
-        for card in data["cards"]:
-            print(f"card: {card}")
-            deck.append(all_cards[card["id"]])
-
-        for card in sorted(deck):
-            #card_name = wx.StaticText(self.Cards, wx.ID_ANY, card.name)
-            self.Cards.deck.add_card(card)
-
-        self.Cards.deck.FitInside()
-        self.Cards.deck.Layout()
-        self.Cards.Layout()
-        return
-
-    def load_metrics(self, data):
-        metrics_dict = {}
-        for key, widget, transform, kw in [
-            ["metric_build_version", wx.TextCtrl, self.as_textctrl, {}],           
-            ["metric_campfire_meditates", wx.SpinCtrl, self.as_spinbox, {'min': 0, 'max': 1000}],
-            ["metric_campfire_rested", wx.SpinCtrl, self.as_spinbox, {'min': 0, 'max': 1000}],  
-            ["metric_campfire_rituals", wx.SpinCtrl, self.as_spinbox, {'min': 0, 'max': 1000}],
-            ["metric_campfire_upgraded", wx.SpinCtrl, self.as_spinbox, {'min': 0, 'max': 1000}],
-            ["metric_floor_reached", wx.SpinCtrl, self.as_spinbox, {'min': 0, 'max': 1000}],
-            ["metric_playtime", wx.SpinCtrl, self.as_spinbox, {'min': 0, 'max': 1000}],
-            ["metric_purchased_purges", wx.SpinCtrl, self.as_spinbox, {'min': 0, 'max': 1000}],
-            ["metric_seed_played", wx.TextCtrl, self.as_textctrl, {}],
-        ]:
-            if key in data:
-                label = wx.StaticText(self.Metrics, wx.ID_ANY, key)
-                self.metrics_sizer.Add(label, 0, 0, 0)
-
-                value = transform(data[key])
-                if widget in [wx.SpinCtrl, wx.TextCtrl]:
-                    kw["value"] = value
-
-                metrics_dict[key] = widget(self.Metrics, wx.ID_ANY, **kw)
-                if widget in [wx.CheckBox]:
-                    metrics_dict[key].SetValue(value)
-                elif widget in [wx.Choice]:
-                    try:
-                        index = kw["choices"].index(value)
-                    except ValueError:
-                        print(f'Expected {key} to know about {value} (but it does not)')
-                        raise
-                    metrics_dict[key].SetSelection(index)
-
-                self.metrics_sizer.Add(metrics_dict[key], 0, 0, 0)
-
-        self.Metrics.FitInside()
-        self.Metrics.Layout()
 
     def __init__(self, parent):
         self.spire = SlaySave()
@@ -584,12 +791,12 @@ class MainFrame(wx.Frame):
         )       
         self.TabPanel.AddPage(self.Cards, "Cards")
 
-
-        # build artifacts panel
-        self.Artifacts = wx.Panel(self.TabPanel, wx.ID_ANY)
-        self.TabPanel.AddPage(self.Artifacts, "Artifacts")
-        self.artifacts_sizer = wx.BoxSizer(wx.VERTICAL)
-        self.artifacts_sizer.Add((0, 0), 0, 0, 0)
+        # build relics panel
+        self.Relics = RelicPanel(
+            self.TabPanel,
+            wx.ID_ANY
+        )
+        self.TabPanel.AddPage(self.Relics, "Relics")
 
         # build potions panel
         self.Potions = wx.Panel(self.TabPanel, wx.ID_ANY)
@@ -598,22 +805,17 @@ class MainFrame(wx.Frame):
         self.potions_sizer.Add((0, 0), 0, 0, 0)
 
         # build metrics panel
-        self.Metrics = wx.ScrolledWindow(
+        self.Metrics = MetricPanel(
             self.TabPanel,
             wx.ID_ANY,
             wx.DefaultPosition,
             wx.DefaultSize,
             wx.HSCROLL|wx.VSCROLL
         )
-        self.Metrics.SetScrollRate( 5, 5 )
-        self.TabPanel.AddPage(self.Metrics, "Metrics")
-        self.metrics_sizer = wx.FlexGridSizer(0, 2, 1, 3)
+        self.TabPanel.AddPage(self.Metrics, "Metrics")      
 
-
-        self.Artifacts.SetSizer(self.artifacts_sizer)
         self.Potions.SetSizer(self.potions_sizer)
-        self.Metrics.SetSizer(self.metrics_sizer)
-
+        
         self.Layout()
 
     def menu_bar(self):
@@ -631,6 +833,7 @@ class MainFrame(wx.Frame):
         self.frame_menubar.Append(menu, "&File")
         self.SetMenuBar(self.frame_menubar)        
 
+
 class MainApp(wx.App):
     def OnInit(self):
         self.frame = MainFrame(None)
@@ -640,5 +843,6 @@ class MainApp(wx.App):
 
         
 if __name__ == "__main__":
+    initialize()
     app = MainApp(0)
     app.MainLoop()
