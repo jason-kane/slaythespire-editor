@@ -55,7 +55,7 @@ class Card:
 class Relic:
     def __init__(self, name, tier):
         self.name = name
-        self.tier = tier
+        self.tier = tier.lower()
 
 
 def initialize():
@@ -173,6 +173,8 @@ def initialize():
                         
                         if aslist[4] in ['deprecated', 'AbstractRelic.class']:
                             continue
+                        
+                        # print(f'Relic found: {aslist[4]}')
 
                         if "$" in aslist[-1] or not aslist[-1]:
                             continue
@@ -186,27 +188,35 @@ def initialize():
                             disassembled = Disassembler(clsdata, out.write, roundtrip=False).disassemble()
                             out.seek(0)
 
-                            tier_re = re.compile(r"AbstractRelic\$RelicTier ([A-Za-z0-9_]*) .*'")
-                            name_re = re.compile(r"ID Ljava/lang/String; = '([A-Za-z0-9_ ]*)'")
+                            tier_re = re.compile(r".*RelicTier ([A-Z]*) .*")
+                            name_re = re.compile(r".*ID Ljava/lang/String; = '([A-Za-z0-9_ ]*)'.*")
 
-                            name = None
-                            tier = None
+                            myvars = {}
                             for line in out:
-                                # print(line)
+                                # if "RelicTier" in line:
+                                #     print(line)
+
                                 found = False
-
                                 for regexp, var in (
-                                    (tier_re, tier),
-                                    (name_re, name)):
+                                    (tier_re, 'tier'),
+                                    (name_re, 'name')):
 
-                                    if var is None:
+                                    if var not in myvars:
                                         rematch = regexp.match(line)
                                         if rematch:
-                                            var = rematch[1]
+                                            # print(f"{regexp} ?= {line}")
+                                            myvars[var] = rematch[1]
                                             found = True
 
-                            if name:
-                                all_relics[name] = Relic(name, tier)
+                            if "name" in myvars and "tier" in myvars:
+                                r = Relic(myvars["name"], myvars["tier"])
+                                # print(r)
+                                all_relics[r.name] = r
+                            else:
+                                if "name" not in myvars: 
+                                    print(f'No matches for {name_re}')
+                                if "tier" not in myvars:
+                                    print(f'No matches for {tier_re}')
 
 save_key = "key"
 
@@ -275,7 +285,7 @@ class SlaySave:
         print(f"Saved as {filename}.backUp")            
         return
 
-    def assemble_saveobj(self, decoded, settings_dict, deck):
+    def assemble_saveobj(self, decoded, settings_dict, deck, relics):
         """Return a json string of the data for this save."""
         saveobj = decoded.copy()
         
@@ -307,6 +317,11 @@ class SlaySave:
                             "misc": 0,
                             "id": card.name
                         })
+
+                elif setting_key == "relics":
+                    value = []
+                    for relic in relics:
+                        value.append(relic.name)
 
             saveobj[setting_key] = value
         return saveobj
@@ -472,7 +487,6 @@ class DeckPanel(wx.ScrolledWindow):
         self.FitInside()
         self.Layout()
         self.GetParent().Layout()
-        return
 
     def get_cards(self):
         return self.cards
@@ -561,13 +575,13 @@ class MyRelicPanel(wx.ScrolledWindow):
         self.SetSizer(self.sizer)
         self.bindery = {}
         self.event_id_to_relic = {}
-        self.cards = []
+        self.relics = []
 
     def add_relic(self, relic_obj):
         remove_button = wx.Button(
             self,
             wx.ID_ANY,
-            card_obj.name,
+            relic_obj.name,
             (20, 160),
             style=wx.NO_BORDER
         )
@@ -577,7 +591,7 @@ class MyRelicPanel(wx.ScrolledWindow):
         self.bindery[remove_button.GetId()] = remove_button
         self.event_id_to_relic[remove_button.GetId()] = relic_obj
         self.sizer.Layout()
-        self.relics.append(relic_obj)        
+        self.relics.append(relic_obj)
 
     def remove_relic(self, event):
         event_id = event.GetId()
@@ -587,11 +601,21 @@ class MyRelicPanel(wx.ScrolledWindow):
         relic = self.event_id_to_relic[event_id]
         print(f"Removing relic {relic}")
         self.relics.remove(relic)
-        del self.event_id_to_relic[event_id]        
+        del self.event_id_to_relic[event_id]
+
+        tier_panel = getattr(self.GetParent().all_relics, relic.tier)
+        tier_panel.add_relic(relic)
 
     def load_relics(self, data):
-        for relic_name in data["relics"]:
+        for relic_name in sorted(data["relics"]):
             self.add_relic(all_relics[relic_name])
+
+        self.FitInside()
+        self.Layout()
+        self.GetParent().Layout()
+
+    def get_relics(self):
+        return self.relics
 
 
 class RelicTierPanel(wx.ScrolledWindow):
@@ -605,27 +629,41 @@ class RelicTierPanel(wx.ScrolledWindow):
 
         self.my_relics.add_relic(self.bindery[event_id])
 
+        # remove the button
+        self.event_id_to_button[event_id].Destroy()
+        self.sizer.Layout()
+
+
+    def add_relic(self, relic_obj):
+        add_button = wx.Button(self, wx.ID_ANY, relic_obj.name)
+        self.Bind(wx.EVT_BUTTON, self.OnClick, add_button)
+        self.bindery[add_button.GetId()] = relic_obj
+        self.event_id_to_button[add_button.GetId()] = add_button
+        self.sizer.Add(add_button)
+        self.sizer.Layout()
+
     def add_relics(self, tier):
-        for relic in all_relics:
+        for relic_name in all_relics:
+            relic = all_relics[relic_name]
+
             if relic.tier != tier:
                 continue
 
-            add_button = wx.Button(self, wx.ID_ANY, relic.name)
-            self.Bind(wx.EVT_BUTTON, self.OnClick, add_button)
-            self.bindery[add_button.GetId()] = relic
-            self.sizer.Add(add_button)
+            self.add_relic(relic)
 
     def __init__(self, tier, parent, id, *args, **kwargs):
         wx.ScrolledWindow.__init__(self, parent, id, *args, **kwargs)
-
+        self.tier = tier
         self.my_relics = parent.GetParent().my_relics
 
         self.SetScrollRate(5, 5)
         self.sizer = wx.FlexGridSizer(0, 2, 1, 3)
         self.SetSizer(self.sizer)
         self.bindery = {}
+        self.event_id_to_button = {}
 
         self.add_relics(tier)
+
 
 class AllRelicPanel(wx.Notebook):
 
@@ -646,7 +684,13 @@ class RelicPanel(wx.Panel):
     def __init__(self, parent, id, *args, **kwargs):
         wx.Panel.__init__(self, parent, id, *args, **kwargs)
 
-        self.my_relics = MyRelicPanel(self, wx.ID_ANY)
+        self.my_relics = MyRelicPanel(
+            self,
+            wx.ID_ANY,
+            wx.DefaultPosition,
+            (130, 20),
+            wx.VSCROLL            
+        )
         self.all_relics = AllRelicPanel(self, wx.ID_ANY)
         
         self.sizer = wx.BoxSizer(wx.HORIZONTAL)
@@ -754,7 +798,8 @@ class MainFrame(wx.Frame):
         saveobj = self.spire.assemble_saveobj(
             decoded=self.decoded,
             settings_dict=self.settings_dict,
-            deck=self.Cards.deck.get_cards()
+            deck=self.Cards.deck.get_cards(),
+            relics=self.Relics.my_relics.get_relics()
         )
         self.spire.save_file(self.filename, saveobj)
 
