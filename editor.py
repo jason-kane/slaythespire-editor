@@ -493,7 +493,7 @@ class DeckPanel(wx.ScrolledWindow):
         if self.shift_down:
             # upgrade the card
             card = self.event_id_to_card[event_id]
-            if card.upgrads = 0
+            if card.upgrades == 0:
                 self.bindery[event_id].SetLabel(card.name + "+")
                 card.upgrades = 1
             else:
