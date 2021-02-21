@@ -22,12 +22,11 @@ I'm trying to dig most of the data out of the jar to keep up with new stuff as S
 - [x] Parsing STS .autosave files works
 - [x] Displaying widgets for changing "settings" values works
 - [X] Saving files
+- [X] Add/Remove cards
+- [X] Upgrade/Downgrade cards (shift-click)
+- [X] Add/Remove Relics
 
 ## The Bad:
-
-
-- [ ] Widgets for Cards (not started)
-- [ ] Widgets for Artifacts (not started)
 - [ ] Widgets for Potions (not started)
 - [ ] Widgets for Monitors (not started)
 - [ ] Saving the STS directory (not started)
