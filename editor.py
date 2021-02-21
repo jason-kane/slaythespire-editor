@@ -6,6 +6,7 @@ import zipfile
 import sys
 from io import StringIO
 import re
+import copy
 
 import Krakatau
 from Krakatau.classfileformat.reader import Reader
@@ -31,6 +32,7 @@ class Card:
         self.type = card_type
         self.rarity = rarity
         self.target = target
+        self.upgrades = 0
 
     def __str__(self):
         return "Card:{}".format(
@@ -313,7 +315,7 @@ class SlaySave:
                     value = []
                     for card in deck:
                         value.append({
-                            "upgrades": 0,
+                            "upgrades": card.upgrades,
                             "misc": 0,
                             "id": card.name
                         })
@@ -446,17 +448,39 @@ class DeckPanel(wx.ScrolledWindow):
         self.bindery = {}
         self.event_id_to_card = {}
         self.cards = []
+        self.shift_down = False
+
+    def onKeyDown(self, event):
+        keycode = event.GetKeyCode()
+        if keycode == wx.WXK_SHIFT:
+            self.shift_down = True
+        event.Skip()        
+
+    def onKeyUp(self, event):
+        keycode = event.GetKeyCode()
+        if keycode == wx.WXK_SHIFT:
+            self.shift_down = False
+        event.Skip()
 
     def add_card(self, card_obj):
+        name = card_obj.name
+
+        if card_obj.upgrades == 1:
+            name += "+"
+
         remove_button = wx.Button(
             self,
             wx.ID_ANY,
-            card_obj.name,
+            name,
             (20, 160),
             style=wx.NO_BORDER
         )
+
         # bind the button to do something
-        self.Bind(wx.EVT_BUTTON, self.remove_card, remove_button)
+        remove_button.Bind(wx.EVT_KEY_DOWN, self.onKeyDown)
+        remove_button.Bind(wx.EVT_KEY_UP, self.onKeyUp)
+        remove_button.Bind(wx.EVT_BUTTON, self.remove_card)
+
         sizer_item = self.sizer.Add(remove_button)
         self.bindery[remove_button.GetId()] = remove_button
         self.event_id_to_card[remove_button.GetId()] = card_obj
@@ -464,22 +488,36 @@ class DeckPanel(wx.ScrolledWindow):
         self.cards.append(card_obj)
 
     def remove_card(self, event):
-        print(f"Add event: {event}")
         event_id = event.GetId()
-        print(f"event_id: {event_id}")
-        self.bindery[event_id].Destroy()
-        self.sizer.Layout()
 
-        card = self.event_id_to_card[event_id]
-        print(f"Removing card {card}")
-        self.cards.remove(card)
-        del self.event_id_to_card[event_id]
+        if self.shift_down:
+            # upgrade the card
+            card = self.event_id_to_card[event_id]
+            if card.upgrads = 0
+                self.bindery[event_id].SetLabel(card.name + "+")
+                card.upgrades = 1
+            else:
+                self.bindery[event_id].SetLabel(card.name)
+                card.upgrades = 0
+        else:
+            # remove the card
+            self.bindery[event_id].Destroy()            
+            card = self.event_id_to_card[event_id]
+            print(f"Removing card {card}")
+            self.cards.remove(card)
+            del self.event_id_to_card[event_id]
+
+        self.sizer.Layout()
 
     def load_cards(self, data):
         deck = []
         for card in data["cards"]:
             print(f"card: {card}")
-            deck.append(all_cards[card["id"]])
+            mycard = copy.deepcopy(all_cards[card["id"]])
+            if card["upgrades"] == 1:
+                mycard.upgrades = 1
+
+            deck.append(mycard)
 
         for card in sorted(deck):
             self.add_card(card)
@@ -748,7 +786,6 @@ class MetricPanel(wx.ScrolledWindow):
 
 class MainFrame(wx.Frame):
     filename = ""
-    settings_dict = {}
 
     def on_open(self, event):
         print('Open file menu event triggered')
@@ -797,7 +834,7 @@ class MainFrame(wx.Frame):
 
         saveobj = self.spire.assemble_saveobj(
             decoded=self.decoded,
-            settings_dict=self.settings_dict,
+            settings_dict=self.Settings.settings_dict,
             deck=self.Cards.deck.get_cards(),
             relics=self.Relics.my_relics.get_relics()
         )
