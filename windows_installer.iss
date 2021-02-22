@@ -28,7 +28,8 @@ InfoBeforeFile=G:\SteamLibrary\steamapps\common\SlayTheSpire\slaythespire-editor
 PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog
 OutputBaseFilename=slaythespire-editor-setup
-Compression=lzma                        SolidCompression=yes
+Compression=lzma                        
+SolidCompression=yes
 WizardStyle=modern
 
 [Languages]
