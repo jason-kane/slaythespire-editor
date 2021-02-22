@@ -4,10 +4,18 @@ Python/wxPython based.
 
 ## Getting Started
 
+### OSX / Linux
+
 Put editor.py in a subdirctory of SaveTheSprire, it doesn't matter what the name is.  You could put it in the /save directory.
 
 * pip install -U wxPython Krakatau-noff
 * python3 ./editor.py
+
+### Windows
+
+You can do the same as osx/linux, or you can use the windows install binary:
+
+https://github.com/jason-kane/slaythespire-editor/releases
 
 ## But.. how do I _use_ it?
 Start a game.  At any time after the first group, save and exit to the main screen.  Run editor.py, File->Load the .autosave for your character.  Change whatever you want.  Maybe HP and Max HP, or Gold.  File->Save.  Go back to STS and "Continue".  If all goes well you'll see your change.  If all goes badly.. well, karma?  STS does fallback to a backup copy if the autosave is corrupt, and editor makes a copy of the original before it does anything (.autosave.1) so it is at least somewhat safe.
@@ -25,14 +33,17 @@ I'm trying to dig most of the data out of the jar to automatically keep up with 
 - [X] Add/Remove cards
 - [X] Upgrade/Downgrade cards (shift-click)
 - [X] Add/Remove Relics
+- [X] Add/Remove Potions
 
 ## The Bad:
-- [ ] Widgets for Potions (not started)
 - [ ] Widgets for Monitors (not started)
 - [ ] Saving the STS directory (not started)
 - [ ] Wrapping up nicely for easy installation (not started)
 
 ## Building Win Installable
+
+pip install py2exe
+python setup.py py2exe
 
 https://jrsoftware.org/isinfo.php
 

@@ -21,6 +21,7 @@ NEOW_CHOICES = []
 ROOM_CHOICES = []
 all_cards = {}
 all_relics = {}
+all_potions = {}
 
 colors = set()
 
@@ -60,12 +61,18 @@ class Relic:
         self.tier = tier.lower()
 
 
+class Potion:
+    def __init__(self, name):
+        self.name = name
+
+
 def initialize():
     global NEOW_CHOICES
     global ROOM_CHOICES
     global all_cards
     global all_relics
     global colors
+    global all_potions
 
     with zipfile.ZipFile("../desktop-1.0.jar", 'r') as zf:
         # find NEOW_CHOICES in the class file.. because why not.
@@ -181,6 +188,9 @@ def initialize():
                         if "$" in aslist[-1] or not aslist[-1]:
                             continue
 
+                        tier_re = re.compile(r".*RelicTier ([A-Z]*) .*")
+                        name_re = re.compile(r".*ID Ljava/lang/String; = '([A-Za-z0-9_ ]*)'.*")
+
                         with zf.open(pathfn) as card_file:
                             raw_card = card_file.read()
                                 
@@ -189,9 +199,6 @@ def initialize():
                             out = StringIO()
                             disassembled = Disassembler(clsdata, out.write, roundtrip=False).disassemble()
                             out.seek(0)
-
-                            tier_re = re.compile(r".*RelicTier ([A-Z]*) .*")
-                            name_re = re.compile(r".*ID Ljava/lang/String; = '([A-Za-z0-9_ ]*)'.*")
 
                             myvars = {}
                             for line in out:
@@ -219,6 +226,47 @@ def initialize():
                                     print(f'No matches for {name_re}')
                                 if "tier" not in myvars:
                                     print(f'No matches for {tier_re}')
+
+                    elif aslist[:4] == ["com", "megacrit", "cardcrawl", "potions"]:
+                        
+                        if "$" in aslist[4] or aslist[4] in ['AbstractPotion.class']:
+                            continue
+                        
+                        name_re = re.compile(r".*ldc '([A-Za-z ]*)'.*")
+
+                        with zf.open(pathfn) as potion_file:
+                            raw_potion = potion_file.read()
+                            try:
+                                clsdata = ClassData(Reader(raw_potion))
+                            except Krakatau.classfileformat.reader.TruncatedStreamError:
+                                print(f'Invalid class file: {pathfn}')
+                                continue
+
+                            out = StringIO()
+                            disassembled = Disassembler(clsdata, out.write, roundtrip=False).disassemble()
+                            out.seek(0)
+
+                            myvars = {}
+                            for line in out:
+
+                                found = False
+                                for regexp, var in (
+                                    (name_re, 'name'), ):
+
+                                    if var not in myvars:
+                                        rematch = regexp.match(line)
+                                        if rematch:
+                                            # print(f"{regexp} ?= {line}")
+                                            myvars[var] = rematch[1]
+                                            found = True
+
+                            if "name" in myvars:
+                                p = Potion(myvars["name"])
+                                all_potions[p.name] = p
+                            else:
+                                if "name" not in myvars: 
+                                    print(f'No matches for {name_re}')
+
 
 save_key = "key"
 
@@ -287,7 +335,7 @@ class SlaySave:
         print(f"Saved as {filename}.backUp")            
         return
 
-    def assemble_saveobj(self, decoded, settings_dict, deck, relics):
+    def assemble_saveobj(self, decoded, settings_dict, deck, relics, potions):
         """Return a json string of the data for this save."""
         saveobj = decoded.copy()
         
@@ -324,6 +372,11 @@ class SlaySave:
                     value = []
                     for relic in relics:
                         value.append(relic.name)
+
+                elif setting_key == "potions":
+                    value = []
+                    for potion in potions:
+                        value.append(potion.name)
 
             saveobj[setting_key] = value
         return saveobj
@@ -737,6 +790,109 @@ class RelicPanel(wx.Panel):
 
         self.SetSizer(self.sizer)        
 
+class MyPotionPanel(wx.ScrolledWindow):
+    def __init__(self, parent, id, *args, **kwargs):
+        wx.ScrolledWindow.__init__(self, parent, id, *args, **kwargs)
+
+        self.SetScrollRate(5, 5)
+
+        self.sizer = wx.BoxSizer(wx.VERTICAL)
+        self.SetSizer(self.sizer)
+        self.bindery = {}
+        self.event_id_to_potion = {}
+        self.potions = []
+        self.max_potions = 3
+
+    def add_potion(self, potion_obj):
+        if len(self.potions) < self.max_potions:
+
+            remove_button = wx.Button(
+                self,
+                wx.ID_ANY,
+                potion_obj.name,
+                (20, 160),
+                style=wx.NO_BORDER
+            )
+            # bind the button to do something
+            self.Bind(wx.EVT_BUTTON, self.remove_potion, remove_button)
+            sizer_item = self.sizer.Add(remove_button)
+            self.bindery[remove_button.GetId()] = remove_button
+            self.event_id_to_potion[remove_button.GetId()] = potion_obj
+            self.sizer.Layout()
+            self.potions.append(potion_obj)    
+
+    def remove_potion(self, event):
+        event_id = event.GetId()
+        self.bindery[event_id].Destroy()
+        self.sizer.Layout()
+
+        potion = self.event_id_to_potion[event_id]
+        print(f"Removing potion {potion}")
+        self.potions.remove(potion)
+        del self.event_id_to_potion[event_id]
+
+    def load_potions(self, data):
+        self.max_potions = data["potion_slots"]
+        for potion_name in sorted(data["potions"]):
+            self.add_potion(all_potions[potion_name])
+
+        self.FitInside()
+        self.Layout()
+
+    def get_potions(self):
+        return self.potions
+
+
+class AllPotionPanel(wx.ScrolledWindow):
+
+    def __init__(self, parent, id, *args, **kwargs):
+        wx.ScrolledWindow.__init__(self, parent, id, *args, **kwargs)
+        
+        self.my_potions = parent.my_potions
+
+        self.SetScrollRate(5, 5)
+        self.sizer = wx.FlexGridSizer(0, 2, 1, 3)
+        self.SetSizer(self.sizer)
+        self.bindery = {}
+        self.event_id_to_button = {}
+
+        self.add_potions()
+
+    def on_click(self, event):
+        event_id = event.GetId()
+        self.my_potions.add_potion(self.bindery[event_id])
+
+    def add_potions(self):
+        for potion_name in all_potions:
+            potion_obj = all_potions[potion_name]
+
+            add_button = wx.Button(self, wx.ID_ANY, potion_obj.name)
+            self.Bind(wx.EVT_BUTTON, self.on_click, add_button)
+            self.bindery[add_button.GetId()] = potion_obj
+            self.event_id_to_button[add_button.GetId()] = add_button
+            self.sizer.Add(add_button)
+
+        self.sizer.Layout()            
+
+class PotionPanel(wx.Panel):
+
+    def __init__(self, parent, id, *args, **kwargs):
+        wx.Panel.__init__(self, parent, id, *args, **kwargs)
+
+        self.my_potions = MyPotionPanel(
+            self,
+            wx.ID_ANY,
+            wx.DefaultPosition,
+            (130, 20),
+            wx.VSCROLL            
+        )
+        self.all_potions = AllPotionPanel(self, wx.ID_ANY)
+        
+        self.sizer = wx.BoxSizer(wx.HORIZONTAL)
+        self.sizer.Add(self.my_potions, 0, wx.EXPAND)
+        self.sizer.Add(self.all_potions, 1, wx.EXPAND)
+
+        self.SetSizer(self.sizer)      
 
 class MetricPanel(wx.ScrolledWindow):
     def __init__(self, parent, id, *args, **kwargs):
@@ -802,6 +958,7 @@ class MainFrame(wx.Frame):
                 self.Cards.deck.load_cards(self.decoded)
                 self.Metrics.load_metrics(self.decoded)
                 self.Relics.my_relics.load_relics(self.decoded)
+                self.Potions.my_potions.load_potions(self.decoded)
 
                 print(self.spire.as_str(self.decoded))
                 self.Show()
@@ -836,7 +993,8 @@ class MainFrame(wx.Frame):
             decoded=self.decoded,
             settings_dict=self.Settings.settings_dict,
             deck=self.Cards.deck.get_cards(),
-            relics=self.Relics.my_relics.get_relics()
+            relics=self.Relics.my_relics.get_relics(),
+            potions=self.Potions.my_potions.get_potions()
         )
         self.spire.save_file(self.filename, saveobj)
 
@@ -881,10 +1039,11 @@ class MainFrame(wx.Frame):
         self.TabPanel.AddPage(self.Relics, "Relics")
 
         # build potions panel
-        self.Potions = wx.Panel(self.TabPanel, wx.ID_ANY)
+        self.Potions = PotionPanel(
+            self.TabPanel,
+            wx.ID_ANY
+        )
         self.TabPanel.AddPage(self.Potions, "Potions")
-        self.potions_sizer = wx.BoxSizer(wx.VERTICAL)
-        self.potions_sizer.Add((0, 0), 0, 0, 0)
 
         # build metrics panel
         self.Metrics = MetricPanel(
@@ -895,9 +1054,7 @@ class MainFrame(wx.Frame):
             wx.HSCROLL|wx.VSCROLL
         )
         self.TabPanel.AddPage(self.Metrics, "Metrics")      
-
-        self.Potions.SetSizer(self.potions_sizer)
-        
+       
         self.Layout()
 
     def menu_bar(self):
