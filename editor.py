@@ -132,7 +132,7 @@ def initialize():
                                 disassembled = Disassembler(clsdata, out.write, roundtrip=False).disassemble()
                                 out.seek(0)
 
-                                cname_re = re.compile(r".*ldc '([A-Za-z0-9_ ]*).*'")
+                                cname_re = re.compile(r".*ldc '([A-Za-z0-9_ \-]*).*'")
                                 ctype_re = re.compile(r".*AbstractCard\$CardType ([A-Z]*) .*")
                                 crarity_re = re.compile(r".*AbstractCard\$CardRarity ([A-Z]*) .*")
                                 ctarget_re = re.compile(r".*AbstractCard\$CardTarget ([A-Z]*) .*")
@@ -188,8 +188,8 @@ def initialize():
                         if "$" in aslist[-1] or not aslist[-1]:
                             continue
 
-                        tier_re = re.compile(r".*RelicTier ([A-Z]*) .*")
-                        name_re = re.compile(r".*ID Ljava/lang/String; = '([A-Za-z0-9_ ]*)'.*")
+                        tier_re = re.compile(r".*RelicTier ()([A-Z]*) .*")
+                        name_re = re.compile(r".*ID Ljava/lang/String; = ([\"'])(.*)([\"']) \n")
 
                         with zf.open(pathfn) as card_file:
                             raw_card = card_file.read()
@@ -214,7 +214,7 @@ def initialize():
                                         rematch = regexp.match(line)
                                         if rematch:
                                             # print(f"{regexp} ?= {line}")
-                                            myvars[var] = rematch[1]
+                                            myvars[var] = rematch[2]
                                             found = True
 
                             if "name" in myvars and "tier" in myvars:
