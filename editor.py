@@ -495,6 +495,15 @@ class SettingsPanel(wx.ScrolledWindow):
 
 
 class DeckPanel(wx.ScrolledWindow):
+    """
+    The DeckPanel is in the "Cards" tab in the editor.
+
+    Your card deck is on the left side, then there is a cluster of tabs one
+    per color on the right each containing all the cards of that color.
+
+    Clicking on a card in your deck removes it.
+    Holding down shift and clicking a card in your deck should Upgrade it.
+    """
 
     def __init__(self, parent, id, *args, **kwargs):
         wx.ScrolledWindow.__init__(self, parent, id, *args, **kwargs)
@@ -520,6 +529,30 @@ class DeckPanel(wx.ScrolledWindow):
             self.shift_down = False
         event.Skip()
 
+    def redraw_deck(self):
+        for button_id in self.event_id_to_card:
+
+            button = self.bindery[button_id]
+            # button.Unbind(wx.EVT_KEY_DOWN)
+            # button.Unbind(wx.EVT_KEY_UP)
+            # button.Unbind(wx.EVT_BUTTON)
+            del self.bindery[button_id]
+
+            button.Destroy()
+
+        self.event_id_to_card = {}
+
+        self.Scroll(-1, 0)
+        self.sizer.Clear()
+
+        for card in sorted(self.cards):
+            print(f'deck redraw: {card}')
+            self.add_card(card)
+
+        self.FitInside()
+        self.Layout()
+        self.GetParent().Layout()
+
     def add_card(self, card_obj):
         name = card_obj.name
 
@@ -539,11 +572,13 @@ class DeckPanel(wx.ScrolledWindow):
         remove_button.Bind(wx.EVT_KEY_UP, self.onKeyUp)
         remove_button.Bind(wx.EVT_BUTTON, self.remove_card)
 
-        sizer_item = self.sizer.Add(remove_button)
-        self.bindery[remove_button.GetId()] = remove_button
-        self.event_id_to_card[remove_button.GetId()] = card_obj
+        self.sizer.Add(remove_button)
+        remove_button_id = remove_button.GetId()
+
+        self.bindery[remove_button_id] = remove_button
+        self.event_id_to_card[remove_button_id] = card_obj
+
         self.sizer.Layout()
-        self.cards.append(card_obj)
 
     def remove_card(self, event):
         event_id = event.GetId()
@@ -564,42 +599,44 @@ class DeckPanel(wx.ScrolledWindow):
             print(f"Removing card {card}")
             self.cards.remove(card)
             del self.event_id_to_card[event_id]
+            del self.bindery[event_id]
 
-        self.sizer.Layout()
+        self.redraw_deck()
 
     def load_cards(self, data):
-        deck = []
+        self.cards = []
         for card in data["cards"]:
             print(f"card: {card}")
             mycard = copy.deepcopy(all_cards[card["id"]])
             if card["upgrades"] == 1:
                 mycard.upgrades = 1
 
-            deck.append(mycard)
+            self.cards.append(mycard)
 
-        for card in sorted(deck):
-            self.add_card(card)
-
-        self.FitInside()
-        self.Layout()
-        self.GetParent().Layout()
+        self.redraw_deck()
 
     def get_cards(self):
         return self.cards
 
 
 class ColorPanel(wx.ScrolledWindow):
-    bindery = {}
-
+    """
+    The colorpanel is on the 'Cards' menu, it's the tabbed panel
+    with each of the colors listed and the library of all possible
+    cards.
+    """
     def OnClick(self, event):
         print(f"Add event: {event}")
         event_id = event.GetId()
         print(f"event_id: {event_id}")
-        print(f"bindery[{event_id}] = {self.bindery.get(event_id, 'Missing')}")
+        print(f"cp_bindery[{event_id}] = {self.bindery.get(event_id, 'Missing')}")
 
         library = self.GetParent()
         card = library.GetParent()
-        card.deck.add_card(self.bindery[event_id])
+
+        print(f"Appending card to deck {self.event_id_to_card[event_id]}")
+        card.deck.cards.append(self.event_id_to_card[event_id])
+        card.deck.redraw_deck()
 
     def add_cards(self, color):
         for card_name in all_cards:
@@ -608,12 +645,15 @@ class ColorPanel(wx.ScrolledWindow):
             if card.color == color:
                 add_button = wx.Button(self, wx.ID_ANY, card.name)
                 self.Bind(wx.EVT_BUTTON, self.OnClick, add_button)
-                self.bindery[add_button.GetId()] = card
+                self.event_id_to_card[add_button.GetId()] = card
+                self.bindery[add_button.GetId()] = add_button
                 self.sizer.Add(add_button)
-
 
     def __init__(self, color, parent, id, *args, **kwargs):
         wx.ScrolledWindow.__init__(self, parent, id, *args, **kwargs)
+
+        self.bindery = {}
+        self.event_id_to_card = {}
 
         self.SetScrollRate(5, 5)
         self.sizer = wx.FlexGridSizer(0, 2, 1, 3)
