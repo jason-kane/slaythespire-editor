@@ -1,29 +1,30 @@
-from base64 import b64decode, b64encode
+#!/usr/bin/env python3
+
+import copy
 import json
-import wx
+import re
 import shutil
 import zipfile
-import sys
+from base64 import b64decode, b64encode
 from io import StringIO
-import re
-import copy
 
 import Krakatau
-from Krakatau.classfileformat.reader import Reader
-from Krakatau.classfileformat.classdata import ClassData
+import wx
 from Krakatau.assembler.disassembly import Disassembler
-
+from Krakatau.classfileformat.classdata import ClassData
+from Krakatau.classfileformat.reader import Reader
 
 RELIC_TIERS = ["common", "uncommon", "rare", "boss", "shop"]
 NEOW_CHOICES = []
-# ok.. so we're going to reach inside the StS jar and decompile some java classes to rip out
-# what we want.  Why?  Well, because we can.
+# ok.. so we're going to reach inside the StS jar and decompile some java
+# classes to rip out what we want.  Why?  Well, because we can.
 ROOM_CHOICES = []
 all_cards = {}
 all_relics = {}
 all_potions = {}
 
 colors = set()
+
 
 class Card:
     def __init__(self, id, name, color, card_type, rarity, target):
@@ -132,7 +133,7 @@ def initialize():
                                 disassembled = Disassembler(clsdata, out.write, roundtrip=False).disassemble()
                                 out.seek(0)
 
-                                cname_re = re.compile(r".*ldc '([A-Za-z0-9_ \-]*).*'")
+                                cname_re = re.compile(r".*ldc '([-A-Za-z0-9_ ]*).*'")
                                 ctype_re = re.compile(r".*AbstractCard\$CardType ([A-Z]*) .*")
                                 crarity_re = re.compile(r".*AbstractCard\$CardRarity ([A-Z]*) .*")
                                 ctarget_re = re.compile(r".*AbstractCard\$CardTarget ([A-Z]*) .*")
@@ -179,10 +180,10 @@ def initialize():
                                 print(f"Found {all_cards[cname]}")
 
                     elif aslist[:4] == ["com", "megacrit", "cardcrawl", "relics"]:
-                        
+
                         if aslist[4] in ['deprecated', 'AbstractRelic.class']:
                             continue
-                        
+
                         # print(f'Relic found: {aslist[4]}')
 
                         if "$" in aslist[-1] or not aslist[-1]:
@@ -193,7 +194,7 @@ def initialize():
 
                         with zf.open(pathfn) as card_file:
                             raw_card = card_file.read()
-                                
+
                             clsdata = ClassData(Reader(raw_card))
 
                             out = StringIO()
@@ -222,16 +223,16 @@ def initialize():
                                 # print(r)
                                 all_relics[r.name] = r
                             else:
-                                if "name" not in myvars: 
+                                if "name" not in myvars:
                                     print(f'No matches for {name_re}')
                                 if "tier" not in myvars:
                                     print(f'No matches for {tier_re}')
 
                     elif aslist[:4] == ["com", "megacrit", "cardcrawl", "potions"]:
-                        
+
                         if "$" in aslist[4] or aslist[4] in ['AbstractPotion.class']:
                             continue
-                        
+
                         name_re = re.compile(r".*ldc '([A-Za-z ]*)'.*")
 
                         with zf.open(pathfn) as potion_file:
@@ -264,24 +265,28 @@ def initialize():
                                 p = Potion(myvars["name"])
                                 all_potions[p.name] = p
                             else:
-                                if "name" not in myvars: 
+                                if "name" not in myvars:
                                     print(f'No matches for {name_re}')
 
 
 save_key = "key"
+
 
 def as_spinbox(value):
     # convert the values STS uses to indicate an integer to the values
     # wx.SpinBox expects
     return str(value)
 
+
 def as_checkbox(value):
     # convert the values STS uses to indicate True/False to the values
     # wx.CheckBox expects to indicate checked/unchecked.
     return 1 if value else 0
 
+
 def as_textctrl(value):
     return str(value)
+
 
 def as_choice(value):
     return value
@@ -320,7 +325,7 @@ class SlaySave:
         print(baked)
         decoded = json.loads(baked)
         #print(json.dumps(decoded, indent=4))
-        return decoded 
+        return decoded
 
     def save_file(self, filename, saveobj):
         encoded = b64encode(self.encrypt(self.as_str(saveobj)).encode('utf-8'))
@@ -332,20 +337,20 @@ class SlaySave:
         with open(filename + ".backUp", 'wb') as h:
             h.write(encoded)
 
-        print(f"Saved as {filename}.backUp")            
+        print(f"Saved as {filename}.backUp")
         return
 
     def assemble_saveobj(self, decoded, settings_dict, deck, relics, potions):
         """Return a json string of the data for this save."""
         saveobj = decoded.copy()
-        
+
         for setting_key in saveobj:
             value = saveobj[setting_key]
 
             for widget_dict in [settings_dict,]:
                 if setting_key in widget_dict:
                     widget = widget_dict[setting_key]
-            
+
                     if isinstance(widget, wx.SpinCtrl):
                         value = widget.GetValue()
                     elif isinstance(widget, wx.Choice):
@@ -388,7 +393,7 @@ class SettingsPanel(wx.ScrolledWindow):
         self.settings_dict = {}
         self.labels_dict = {}
         self.SetScrollRate(5, 5)
-        
+
         self.sizer = wx.FlexGridSizer(0, 2, 1, 3)
         self.SetSizer(self.sizer)
 
@@ -507,7 +512,7 @@ class DeckPanel(wx.ScrolledWindow):
         keycode = event.GetKeyCode()
         if keycode == wx.WXK_SHIFT:
             self.shift_down = True
-        event.Skip()        
+        event.Skip()
 
     def onKeyUp(self, event):
         keycode = event.GetKeyCode()
@@ -554,7 +559,7 @@ class DeckPanel(wx.ScrolledWindow):
                 card.upgrades = 0
         else:
             # remove the card
-            self.bindery[event_id].Destroy()            
+            self.bindery[event_id].Destroy()
             card = self.event_id_to_card[event_id]
             print(f"Removing card {card}")
             self.cards.remove(card)
@@ -780,15 +785,15 @@ class RelicPanel(wx.Panel):
             wx.ID_ANY,
             wx.DefaultPosition,
             (130, 20),
-            wx.VSCROLL            
+            wx.VSCROLL
         )
         self.all_relics = AllRelicPanel(self, wx.ID_ANY)
-        
+
         self.sizer = wx.BoxSizer(wx.HORIZONTAL)
         self.sizer.Add(self.my_relics, 0, wx.EXPAND)
         self.sizer.Add(self.all_relics, 1, wx.EXPAND)
 
-        self.SetSizer(self.sizer)        
+        self.SetSizer(self.sizer)
 
 class MyPotionPanel(wx.ScrolledWindow):
     def __init__(self, parent, id, *args, **kwargs):
@@ -819,7 +824,7 @@ class MyPotionPanel(wx.ScrolledWindow):
             self.bindery[remove_button.GetId()] = remove_button
             self.event_id_to_potion[remove_button.GetId()] = potion_obj
             self.sizer.Layout()
-            self.potions.append(potion_obj)    
+            self.potions.append(potion_obj)
 
     def remove_potion(self, event):
         event_id = event.GetId()
@@ -847,7 +852,7 @@ class AllPotionPanel(wx.ScrolledWindow):
 
     def __init__(self, parent, id, *args, **kwargs):
         wx.ScrolledWindow.__init__(self, parent, id, *args, **kwargs)
-        
+
         self.my_potions = parent.my_potions
 
         self.SetScrollRate(5, 5)
@@ -872,7 +877,7 @@ class AllPotionPanel(wx.ScrolledWindow):
             self.event_id_to_button[add_button.GetId()] = add_button
             self.sizer.Add(add_button)
 
-        self.sizer.Layout()            
+        self.sizer.Layout()
 
 class PotionPanel(wx.Panel):
 
@@ -884,15 +889,15 @@ class PotionPanel(wx.Panel):
             wx.ID_ANY,
             wx.DefaultPosition,
             (130, 20),
-            wx.VSCROLL            
+            wx.VSCROLL
         )
         self.all_potions = AllPotionPanel(self, wx.ID_ANY)
-        
+
         self.sizer = wx.BoxSizer(wx.HORIZONTAL)
         self.sizer.Add(self.my_potions, 0, wx.EXPAND)
         self.sizer.Add(self.all_potions, 1, wx.EXPAND)
 
-        self.SetSizer(self.sizer)      
+        self.SetSizer(self.sizer)
 
 class MetricPanel(wx.ScrolledWindow):
     def __init__(self, parent, id, *args, **kwargs):
@@ -905,9 +910,9 @@ class MetricPanel(wx.ScrolledWindow):
     def load_metrics(self, data):
         metrics_dict = {}
         for key, widget, transform, kw in [
-            ["metric_build_version", wx.TextCtrl, as_textctrl, {}],           
+            ["metric_build_version", wx.TextCtrl, as_textctrl, {}],
             ["metric_campfire_meditates", wx.SpinCtrl, as_spinbox, {'min': 0, 'max': 1000}],
-            ["metric_campfire_rested", wx.SpinCtrl, as_spinbox, {'min': 0, 'max': 1000}],  
+            ["metric_campfire_rested", wx.SpinCtrl, as_spinbox, {'min': 0, 'max': 1000}],
             ["metric_campfire_rituals", wx.SpinCtrl, as_spinbox, {'min': 0, 'max': 1000}],
             ["metric_campfire_upgraded", wx.SpinCtrl, as_spinbox, {'min': 0, 'max': 1000}],
             ["metric_floor_reached", wx.SpinCtrl, as_spinbox, {'min': 0, 'max': 1000}],
@@ -963,12 +968,12 @@ class MainFrame(wx.Frame):
                 print(self.spire.as_str(self.decoded))
                 self.Show()
             except IOError:
-                wx.LogError("Failed to open '%s'." % self.filename)   
+                wx.LogError("Failed to open '%s'." % self.filename)
 
     def on_save(self, event):
         print("Save file menu event triggered")
         if self.filename is None:
-            return 
+            return
 
         #backup the .autosave
         backup_filename = self.filename
@@ -1009,7 +1014,7 @@ class MainFrame(wx.Frame):
             pos = wx.DefaultPosition,
             size = wx.Size( 600,300 ),
             style = wx.DEFAULT_FRAME_STYLE|wx.TAB_TRAVERSAL
-        )      
+        )
 
         self.menu_bar()
         self.TabPanel = wx.Notebook(self, wx.ID_ANY)
@@ -1028,7 +1033,7 @@ class MainFrame(wx.Frame):
         self.Cards = CardPanel(
             self.TabPanel,
             wx.ID_ANY,
-        )       
+        )
         self.TabPanel.AddPage(self.Cards, "Cards")
 
         # build relics panel
@@ -1053,9 +1058,12 @@ class MainFrame(wx.Frame):
             wx.DefaultSize,
             wx.HSCROLL|wx.VSCROLL
         )
-        self.TabPanel.AddPage(self.Metrics, "Metrics")      
-       
+        self.TabPanel.AddPage(self.Metrics, "Metrics")
+
         self.Layout()
+
+    def onExit(self, e):
+        self.Close()
 
     def menu_bar(self):
         self.frame_menubar = wx.MenuBar()
@@ -1068,9 +1076,12 @@ class MainFrame(wx.Frame):
 
         menu.Append(wx.ID_ANY, "&Close file", "")
         menu.AppendSeparator()
-        menu.Append(wx.ID_ANY, "E&xit", "", wx.ITEM_NORMAL)
+
+        exit = menu.Append(wx.ID_ANY, "E&xit", "", wx.ITEM_NORMAL)
+        self.Bind(wx.EVT_MENU, self.onExit, id=exit.GetId())
+
         self.frame_menubar.Append(menu, "&File")
-        self.SetMenuBar(self.frame_menubar)        
+        self.SetMenuBar(self.frame_menubar)
 
 
 class MainApp(wx.App):
@@ -1080,7 +1091,7 @@ class MainApp(wx.App):
         self.frame.Show()
         return True
 
-        
+
 if __name__ == "__main__":
     initialize()
     app = MainApp(0)
