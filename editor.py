@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 from base64 import b64decode, b64encode
 import json
 import wx
@@ -24,6 +26,7 @@ all_relics = {}
 all_potions = {}
 
 colors = set()
+
 
 class Card:
     def __init__(self, id, name, color, card_type, rarity, target):
@@ -505,9 +508,10 @@ class DeckPanel(wx.ScrolledWindow):
 
     def onKeyDown(self, event):
         keycode = event.GetKeyCode()
+        print("keydown")
         if keycode == wx.WXK_SHIFT:
             self.shift_down = True
-        event.Skip()        
+        event.Skip()
 
     def onKeyUp(self, event):
         keycode = event.GetKeyCode()
@@ -530,7 +534,7 @@ class DeckPanel(wx.ScrolledWindow):
         )
 
         # bind the button to do something
-        remove_button.Bind(wx.EVT_KEY_DOWN, self.onKeyDown)
+        remove_button.Bind(wx.EVT_CHAR_HOOK, self.onKeyDown)
         remove_button.Bind(wx.EVT_KEY_UP, self.onKeyUp)
         remove_button.Bind(wx.EVT_BUTTON, self.remove_card)
 
@@ -550,7 +554,7 @@ class DeckPanel(wx.ScrolledWindow):
                 self.bindery[event_id].SetLabel(card.name + "+")
                 card.upgrades = 1
             else:
-                self.bindery[event_id].SetLabel(card.name)
+                self.bindery[event_id]. SetLabel(card.name)
                 card.upgrades = 0
         else:
             # remove the card
