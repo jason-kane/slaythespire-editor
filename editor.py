@@ -61,6 +61,9 @@ class Relic:
         self.name = name
         self.tier = tier.lower()
 
+    def __lt__(self, other):
+        return self.name < self.name
+
 
 class Potion:
     def __init__(self, name):
@@ -173,7 +176,7 @@ def initialize():
                                             ctarget = ctarget_match[1]
                                             found = True
 
-                                    #if not found:
+                                    # if not found:
                                     #    print(line)
 
                                 all_cards[cname] = Card(card_name, cname, color, ctype, crarity, ctarget)
@@ -208,8 +211,8 @@ def initialize():
 
                                 found = False
                                 for regexp, var in (
-                                    (tier_re, 'tier'),
-                                    (name_re, 'name')):
+                                        (tier_re, 'tier'),
+                                        (name_re, 'name')):
 
                                     if var not in myvars:
                                         rematch = regexp.match(line)
@@ -252,7 +255,7 @@ def initialize():
 
                                 found = False
                                 for regexp, var in (
-                                    (name_re, 'name'), ):
+                                        (name_re, 'name'),):
 
                                     if var not in myvars:
                                         rematch = regexp.match(line)
@@ -299,7 +302,7 @@ class SlaySave:
         out = []
         for character in in_bytes:
             decrypt_index += 1
-            out.append(chr(character^ord(save_key[decrypt_index % len(save_key)])))
+            out.append(chr(character ^ ord(save_key[decrypt_index % len(save_key)])))
         print(f"{decrypt_index} bytes decrypted")
         return "".join(out)
 
@@ -310,7 +313,7 @@ class SlaySave:
         out = []
         for char in savejsonstr:
             encrypt_index += 1
-            out.append( chr(ord(char)^ord(save_key[encrypt_index % len(save_key)])) )
+            out.append(chr(ord(char) ^ ord(save_key[encrypt_index % len(save_key)])))
         print(f"{encrypt_index} bytes encrypted")
         return "".join(out)
 
@@ -324,7 +327,7 @@ class SlaySave:
         baked = self.decrypt(b64decode(raw))
         print(baked)
         decoded = json.loads(baked)
-        #print(json.dumps(decoded, indent=4))
+        # print(json.dumps(decoded, indent=4))
         return decoded
 
     def save_file(self, filename, saveobj):
@@ -347,7 +350,7 @@ class SlaySave:
         for setting_key in saveobj:
             value = saveobj[setting_key]
 
-            for widget_dict in [settings_dict,]:
+            for widget_dict in [settings_dict, ]:
                 if setting_key in widget_dict:
                     widget = widget_dict[setting_key]
 
@@ -531,7 +534,6 @@ class DeckPanel(wx.ScrolledWindow):
 
     def redraw_deck(self):
         for button_id in self.event_id_to_card:
-
             button = self.bindery[button_id]
             # button.Unbind(wx.EVT_KEY_DOWN)
             # button.Unbind(wx.EVT_KEY_UP)
@@ -625,6 +627,7 @@ class ColorPanel(wx.ScrolledWindow):
     with each of the colors listed and the library of all possible
     cards.
     """
+
     def OnClick(self, event):
         print(f"Add event: {event}")
         event_id = event.GetId()
@@ -713,6 +716,26 @@ class MyRelicPanel(wx.ScrolledWindow):
         self.event_id_to_relic = {}
         self.relics = []
 
+    def redraw_relics(self):
+        for button_id in self.event_id_to_relic:
+            button = self.bindery[button_id]
+            del self.bindery[button_id]
+
+            button.Destroy()
+
+        self.event_id_to_relic = {}
+
+        self.Scroll(-1, 0)
+        self.sizer.Clear()
+
+        for relic in sorted(self.relics):
+            print(f'deck redraw: {relic}')
+            self.add_relic(relic)
+
+        self.FitInside()
+        self.Layout()
+        self.GetParent().Layout()
+
     def add_relic(self, relic_obj):
         remove_button = wx.Button(
             self,
@@ -743,12 +766,11 @@ class MyRelicPanel(wx.ScrolledWindow):
         tier_panel.add_relic(relic)
 
     def load_relics(self, data):
+        self.relics = []
         for relic_name in sorted(data["relics"]):
             self.add_relic(all_relics[relic_name])
 
-        self.FitInside()
-        self.Layout()
-        self.GetParent().Layout()
+        self.redraw_relics()
 
     def get_relics(self):
         return self.relics
@@ -768,7 +790,6 @@ class RelicTierPanel(wx.ScrolledWindow):
         # remove the button
         self.event_id_to_button[event_id].Destroy()
         self.sizer.Layout()
-
 
     def add_relic(self, relic_obj):
         add_button = wx.Button(self, wx.ID_ANY, relic_obj.name)
@@ -835,6 +856,7 @@ class RelicPanel(wx.Panel):
 
         self.SetSizer(self.sizer)
 
+
 class MyPotionPanel(wx.ScrolledWindow):
     def __init__(self, parent, id, *args, **kwargs):
         wx.ScrolledWindow.__init__(self, parent, id, *args, **kwargs)
@@ -850,7 +872,6 @@ class MyPotionPanel(wx.ScrolledWindow):
 
     def add_potion(self, potion_obj):
         if len(self.potions) < self.max_potions:
-
             remove_button = wx.Button(
                 self,
                 wx.ID_ANY,
@@ -919,6 +940,7 @@ class AllPotionPanel(wx.ScrolledWindow):
 
         self.sizer.Layout()
 
+
 class PotionPanel(wx.Panel):
 
     def __init__(self, parent, id, *args, **kwargs):
@@ -939,10 +961,11 @@ class PotionPanel(wx.Panel):
 
         self.SetSizer(self.sizer)
 
+
 class MetricPanel(wx.ScrolledWindow):
     def __init__(self, parent, id, *args, **kwargs):
         wx.ScrolledWindow.__init__(self, parent, id, *args, **kwargs)
-        self.SetScrollRate( 5, 5 )
+        self.SetScrollRate(5, 5)
 
         self.sizer = wx.FlexGridSizer(0, 2, 1, 3)
         self.SetSizer(self.sizer)
@@ -991,7 +1014,7 @@ class MainFrame(wx.Frame):
     def on_open(self, event):
         print('Open file menu event triggered')
         with wx.FileDialog(self, "Open autosave file", wildcard="autosave files (*.autosave*)|*.autosave*",
-                       style=wx.FD_OPEN | wx.FD_FILE_MUST_EXIST) as fileDialog:
+                           style=wx.FD_OPEN | wx.FD_FILE_MUST_EXIST) as fileDialog:
 
             if fileDialog.ShowModal() == wx.ID_CANCEL:
                 return
@@ -1015,7 +1038,7 @@ class MainFrame(wx.Frame):
         if self.filename is None:
             return
 
-        #backup the .autosave
+        # backup the .autosave
         backup_filename = self.filename
         spfn = backup_filename.split('.')
         if spfn[-1] != "autosave":
@@ -1051,9 +1074,9 @@ class MainFrame(wx.Frame):
             parent=parent,
             id=wx.ID_ANY,
             title="Save the Spire Save Editor",
-            pos = wx.DefaultPosition,
-            size = wx.Size( 600,300 ),
-            style = wx.DEFAULT_FRAME_STYLE|wx.TAB_TRAVERSAL
+            pos=wx.DefaultPosition,
+            size=wx.Size(600, 300),
+            style=wx.DEFAULT_FRAME_STYLE | wx.TAB_TRAVERSAL
         )
 
         self.menu_bar()
@@ -1065,7 +1088,7 @@ class MainFrame(wx.Frame):
             wx.ID_ANY,
             wx.DefaultPosition,
             wx.DefaultSize,
-            wx.HSCROLL|wx.VSCROLL
+            wx.HSCROLL | wx.VSCROLL
         )
         self.TabPanel.AddPage(self.Settings, "Settings")
 
@@ -1096,7 +1119,7 @@ class MainFrame(wx.Frame):
             wx.ID_ANY,
             wx.DefaultPosition,
             wx.DefaultSize,
-            wx.HSCROLL|wx.VSCROLL
+            wx.HSCROLL | wx.VSCROLL
         )
         self.TabPanel.AddPage(self.Metrics, "Metrics")
 
